@@ -95,7 +95,7 @@ def main_func(argv):
 
     actions_group = OptionGroup(parser, "Actions",
                     "Tracing use interactiv mode by default. "
-                    "If only enable/disable/stats required. "
+                    "If only enable/disable/status are required. "
                     "Set one of following options:")
     parser.add_option_group(actions_group)
 

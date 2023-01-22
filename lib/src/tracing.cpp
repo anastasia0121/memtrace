@@ -295,10 +295,12 @@ struct File
         : file(_file)
     {}
 
-    void dump(uint64_t base_addr, uint64_t path_lenght, const char *path)
+    void dump(uint64_t base_addr, uint64_t v_addr, uint64_t memsize, uint64_t path_lenght, const char *path)
     {
         file.put('s');
         file.write(reinterpret_cast<const char *>(&base_addr), sizeof(uint64_t));
+        file.write(reinterpret_cast<const char *>(&v_addr), sizeof(uint64_t));
+        file.write(reinterpret_cast<const char *>(&memsize), sizeof(uint64_t));
         file.write(reinterpret_cast<const char *>(&path_lenght), sizeof(uint64_t));
         file.write(path, path_lenght);
     }
@@ -324,7 +326,9 @@ static int dump_bin_info(struct dl_phdr_info *info, size_t size, void *data)
     int i = 0;
     for (; i < info->dlpi_phnum; ++i) {
         if (PT_LOAD == info->dlpi_phdr[i].p_type) {
-            break;
+            if (0x5 == info->dlpi_phdr[i].p_flags) {
+                break;
+            }
         }
     }
 
@@ -335,6 +339,8 @@ static int dump_bin_info(struct dl_phdr_info *info, size_t size, void *data)
 
     // Calculate virtual memory address
     uint64_t base_addr = info->dlpi_addr;
+    uint64_t v_addr = info->dlpi_phdr[i].p_vaddr;
+    uint64_t memsize = info->dlpi_phdr[i].p_memsz;
 
     if (nullptr == info->dlpi_name || '\0' == info->dlpi_name[0]) {
         if (!dd->is_first) {
@@ -356,7 +362,7 @@ static int dump_bin_info(struct dl_phdr_info *info, size_t size, void *data)
         return 0;
     }
 
-    dd->dump(base_addr, path_len, resolved_path);
+    dd->dump(base_addr, v_addr, memsize, path_len, resolved_path);
     return 0;
 }
 

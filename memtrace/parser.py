@@ -1,14 +1,9 @@
-from elftools.elf.constants import P_FLAGS
-from elftools.elf.elffile import ELFFile
-from elftools.elf.segments import Segment
 from functools import cmp_to_key
 from os.path import basename
 from subprocess import Popen, PIPE
-import operator
 import os
-import re
 import signal
-import sys
+
 
 def read_int(fh):
         data = fh.read(8)
@@ -63,18 +58,15 @@ class DataStorage(object):
         self.stacks_info = []
         self.version = 1
 
-    def add_lib_info(self, mapped_addr, path):
+    def add_lib_info(self, mapped_addr, v_addr, memsize, path):
         lib = LinkedLibrary()
         lib.mapped_addr = mapped_addr
+        lib.v_addr = v_addr
+        lib.memsize = memsize
         lib.path = path
-
-        with open(lib.path, 'rb') as elffile:
-            for s in ELFFile(elffile).iter_segments():
-                if s.header.p_type == 'PT_LOAD':
-                    if s.header.p_flags == (P_FLAGS.PF_X + P_FLAGS.PF_R):
-                        lib.begin = lib.mapped_addr
-                        lib.end = lib.begin + s.header.p_memsz
-                        self.mapper.append(lib)
+        lib.begin = lib.mapped_addr + lib.v_addr
+        lib.end = lib.begin + lib.memsize
+        self.mapper.append(lib)
 
     def add_alloc_info(self, allocated, allocated_count, freed, freed_count, stack):
         alloc_info = AllocationPoint(allocated, allocated_count, freed, freed_count, stack)
@@ -106,9 +98,12 @@ class DataStorage(object):
                 elif type == b's':
                     # read library: s, addr, size of path, path
                     mapped_addr = read_int(fh)
+                    v_addr = read_int(fh)
+                    memsize = read_int(fh)
                     size = read_int(fh)
+
                     path = fh.read(size).decode("utf-8")
-                    self.add_lib_info(mapped_addr, path);
+                    self.add_lib_info(mapped_addr, v_addr, memsize, path);
 
                 elif type == b'm':
                     # m, aggregated info (allocated, allocation counter, freed, freed counter),
@@ -157,7 +152,7 @@ class Symbolizer(object):
                 output += "\t << stack pointer broken >>\n"
                 continue
 
-            local_addr = addr - lib.mapped_addr;
+            local_addr = addr - lib.mapped_addr
             symbols = self.get_symbols(lib, local_addr)
             for i in range(0, len(symbols), 2):
                 if symbols[i + 1] == 0:

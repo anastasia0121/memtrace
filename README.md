@@ -36,3 +36,19 @@ Options:
     -s, --status        current status of tracing
 
 ```
+
+# Results
+The program made some allocations in `main()` at tracing time. \
+3 of them were not freed. \
+Allocated but not freed size is 12 bytes, 4 bytes average per allocation.
+```
+Connection to process. Please wait.
+Tracing is enabled.
+Press Ctrl+C to stop tracing.
+^CYou pressed Ctrl+C.
+mt file is /home/anastasia/git/memtrace/26326-01222023-210617.mt.
+Allocated 12 bytes in 3 allocations (4 bytes average)
+        operator new(unsigned long)     at ??:0:0
+        main    at ??:0:0
+        __libc_start_call_main  at ./csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+```

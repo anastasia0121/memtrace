@@ -84,6 +84,9 @@ def find_tracing_functions(pid):
 
 #if __name__ == "__main__":
 def main_func(argv):
+    #_machine = uname()[4]
+    #if _machine == "x86_64":
+
     parser = OptionParser()
 
     parser.add_option("-p", "--pid",

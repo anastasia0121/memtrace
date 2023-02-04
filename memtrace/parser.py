@@ -137,7 +137,7 @@ class DataStorage(object):
 
 class Symbolizer(object):
     def __init__(self):
-        self.symbolizer = Popen('llvm-symbolizer-14',
+        self.symbolizer = Popen('llvm-symbolizer',
                                 stdin=PIPE, stdout=PIPE, stderr=PIPE,
                                 universal_newlines=True, bufsize=1)
 

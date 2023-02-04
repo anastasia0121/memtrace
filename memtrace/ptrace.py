@@ -130,7 +130,7 @@ class siginfo_struct(ctypes.Union):
 
 
 def xsave_area_size():
-    # __cpuid_count(...); ret ebx;
+    # cpuid_count(0xd, 0, eax, ebx, ecx, edx); ret ebx;
     # 31 c9                   xor    %ecx,%ecx
     # b8 0d 00 00 00          mov    $0xd,%eax
     # 49 87 d8                xchg   %rbx,%r8
@@ -140,7 +140,7 @@ def xsave_area_size():
     # c3                      ret
 
     buf = mmap.mmap(-1, mmap.PAGESIZE, prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
-    code = bytes.fromhex("31c9b80d0000004987d80fa24987d84489c0c300f30f1efa4883ec084883c408c3");
+    code = bytes.fromhex("31c9b80d0000004987d80fa24987d84489c0c3");
     buf.write(code)
 
     ftype = ctypes.CFUNCTYPE(ctypes.c_int)

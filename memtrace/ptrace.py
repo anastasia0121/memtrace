@@ -7,44 +7,40 @@ import copy
 
 from util import fail_program
 
-PTRACE_PEEKTEXT   = 1
-PTRACE_PEEKDATA   = 2
-PTRACE_POKETEXT   = 4
-PTRACE_POKEDATA   = 5
-PTRACE_CONT       = 7
-PTRACE_GETREGS    = 12
-PTRACE_SETREGS    = 13
-PTRACE_GETFPREGS  = 14
-PTRACE_SETFPREGS  = 15
-PTRACE_ATTACH     = 16
-PTRACE_DETACH     = 17
+PTRACE_PEEKTEXT = 1
+PTRACE_PEEKDATA = 2
+PTRACE_POKETEXT = 4
+PTRACE_POKEDATA = 5
+PTRACE_CONT = 7
+PTRACE_GETREGS = 12
+PTRACE_SETREGS = 13
+PTRACE_GETFPREGS = 14
+PTRACE_SETFPREGS = 15
+PTRACE_ATTACH = 16
+PTRACE_DETACH = 17
 PTRACE_SETOPTIONS = 0x4200
 PTRACE_GETSIGINFO = 0x4202
 PTRACE_SETSIGINFO = 0x4203
-PTRACE_GETREGSET  = 0x4204
-PTRACE_SETREGSET  = 0x4205
+PTRACE_GETREGSET = 0x4204
+PTRACE_SETREGSET = 0x4205
 PTRACE_SEIZE = 0x4206
 PTRACE_INTERRUPT = 0x4207
 
 PTRACE_O_TRACESYSGOOD = 0x1
-PTRACE_O_TRACEFORK    = 0x2,
-PTRACE_O_TRACEVFORK   = 0x4,
-PTRACE_O_TRACECLONE   = 0x8,
-PTRACE_O_TRACEEXEC    = 0x10,
-PTRACE_O_TRACEVFORKDONE = 0x20,
-PTRACE_O_TRACEEXIT    = 0x40,
-PTRACE_O_TRACESECCOMP = 0x80,
-PTRACE_O_EXITKILL = 0x100000,
-PTRACE_O_SUSPEND_SECCOMP = 0x200000,
-PTRACE_O_MASK     = 0x3000ff
 
 WALL = 0x40000000
+
+NT_X86_XSTATE = 0x202
 
 SI_MAX_SIZE = 128
 SI_MAX_COUNT = int(SI_MAX_SIZE / ctypes.sizeof(ctypes.c_int))
 SI_USER = 0
 
+
 class user_fpregs_struct(ctypes.Structure):
+    """
+    Floating-point registers. From user.h
+    """
     _fields_ = [
         ("cwd", ctypes.c_ushort),
         ("swd", ctypes.c_ushort),
@@ -54,13 +50,16 @@ class user_fpregs_struct(ctypes.Structure):
         ("rdp", ctypes.c_ulonglong),
         ("mxcsr", ctypes.c_uint),
         ("mxcr_mask", ctypes.c_uint),
-        ("st_space", ctypes.c_uint * 32),  # 8*16 bytes for each FP-reg = 128 bytes
-        ("xmm_space", ctypes.c_uint * 64), # 16*16 bytes for each XMM-reg = 256 bytes
+        ("st_space", ctypes.c_uint * 32),  # 8*16 for each FP-reg = 128 B
+        ("xmm_space", ctypes.c_uint * 64),  # 16*16 for each XMM-reg = 256 B
         ("padding", ctypes.c_uint * 24)
     ]
 
 
 class user_regs_struct(ctypes.Structure):
+    """
+    General registers. From user.h
+    """
     _fields_ = [
         ("r15", ctypes.c_ulonglong),
         ("r14", ctypes.c_ulonglong),
@@ -92,17 +91,12 @@ class user_regs_struct(ctypes.Structure):
     ]
 
 
-class iovec_struct(ctypes.Structure):
+class iovec(ctypes.Structure):
     _fields_ = [
         ("iov_base", ctypes.c_void_p),
         ("iov_len", ctypes.c_ulong)
     ]
 
-
-class si_pad_struct(ctypes.Structure):
-    _fields_ = [
-        ("si_pad", ctypes.c_int * SI_MAX_COUNT),
-    ]
 
 class si_sigsegv_struct(ctypes.Structure):
     _fields_ = [
@@ -111,6 +105,7 @@ class si_sigsegv_struct(ctypes.Structure):
         ("si_code", ctypes.c_int),
         ("si_addr", ctypes.c_void_p),
     ]
+
 
 class si_sigint_struct(ctypes.Structure):
     _fields_ = [
@@ -121,15 +116,21 @@ class si_sigint_struct(ctypes.Structure):
         ("si_uid", ctypes.c_int),
     ]
 
+
 class siginfo_struct(ctypes.Union):
     _fields_ = [
-        ("pad", si_pad_struct),
+        ("si_pad", ctypes.c_int * SI_MAX_COUNT),
         ("sigsegv", si_sigsegv_struct),
         ("sigint", si_sigint_struct),
     ]
 
 
 def xsave_area_size():
+    """
+    Check if xsave is supported.
+
+    :return: size of xsave area
+    """
     # cpuid_count(0xd, 0, eax, ebx, ecx, edx); ret ebx;
     # 31 c9                   xor    %ecx,%ecx
     # b8 0d 00 00 00          mov    $0xd,%eax
@@ -139,8 +140,9 @@ def xsave_area_size():
     # 44 89 c0                mov    %r8d,%eax
     # c3                      ret
 
-    buf = mmap.mmap(-1, mmap.PAGESIZE, prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
-    code = bytes.fromhex("31c9b80d0000004987d80fa24987d84489c0c3");
+    buf = mmap.mmap(-1, mmap.PAGESIZE,
+                    prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
+    code = bytes.fromhex("31c9b80d0000004987d80fa24987d84489c0c3")
     buf.write(code)
 
     ftype = ctypes.CFUNCTYPE(ctypes.c_int)
@@ -152,8 +154,11 @@ def xsave_area_size():
 class PtraceTracer:
     def __init__(self, pid):
         self.pid = pid
+        self.tids = []
         self.libc = self.setup_ptrace_call()
         self.xsave_area_size = xsave_area_size()
+        self.use_xsave = False  # set if ptrace succeeds
+        self.use_fxsave = False
 
     def setup_ptrace_call(self):
         libc_path = ctypes.util.find_library("c")
@@ -161,19 +166,27 @@ class PtraceTracer:
             fail_program(self.pid, "find_library", "Cannot find libc library")
 
         libc = ctypes.CDLL(libc_path, use_errno=True)
-        libc.ptrace.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_void_p]
+        libc.ptrace.argtypes = [ctypes.c_uint64, ctypes.c_uint64,
+                                ctypes.c_void_p, ctypes.c_void_p]
         libc.ptrace.restype = ctypes.c_uint64
 
         return libc
 
     def find_process_threads(self):
         task_dir = "/proc/{}/task".format(self.pid)
-        tids = [int(d) for d in os.listdir(task_dir) if os.path.isdir(task_dir + "/" + d) and d.isdigit()]
+        task_dirs = os.listdir(task_dir)
+        tids = [int(d)
+                for d in task_dirs
+                if os.path.isdir(os.path.join(task_dir, d))
+                and d.isdigit()]
 
         return tids
 
     def attach(self):
-        # stop all threads
+        """
+        Attach to process,
+        stop all threads
+        """
         self.tids = self.find_process_threads()
         for tid in self.tids:
             if 0 != self.libc.ptrace(PTRACE_ATTACH, tid, None, None):
@@ -182,17 +195,22 @@ class PtraceTracer:
             stat = os.waitpid(tid, WALL)
             if os.WIFSTOPPED(stat[1]):
                 s = os.WSTOPSIG(stat[1])
-                if (signal.SIGSTOP.value != s):
+                if signal.SIGSTOP.value != s:
                     fail_program(self.pid, "ptrace_attach",
                                  "Wrong signal is {}".format(signal.Signals(s)))
 
     def detach(self):
-        # detach
+        """
+        detach
+        """
         for tid in self.tids:
             if 0 != self.libc.ptrace(PTRACE_DETACH, tid, None, None):
                 fail_program(self.pid, "ptrace_detach({})".format("tid"))
 
     def save_regs(self):
+        """
+        save general purpose registers as self.gpr
+        """
         self.gpr = user_regs_struct()
         if 0 != self.libc.ptrace(PTRACE_GETREGS, self.pid, None, ctypes.byref(self.gpr)):
             fail_program(self.pid, "ptrace_getregs")
@@ -202,9 +220,10 @@ class PtraceTracer:
         self.use_xsave = False
         if self.xsave_area_size:
             buf = ctypes.create_string_buffer(bytes(self.xsave_area_size))
-            self.iov = iovec_struct(ctypes.cast(ctypes.byref(buf), ctypes.c_void_p), self.xsave_area_size)
+            self.iov = iovec(ctypes.cast(ctypes.byref(buf), ctypes.c_void_p),
+                                    self.xsave_area_size)
             if 0 == self.libc.ptrace(PTRACE_GETREGSET, self.pid, NT_X86_XSTATE, ctypes.byref(self.iov)):
-                self.xsave_support = True
+                self.use_xsave = True
 
         # xsave area include fxsave
         self.use_fxsave = False
@@ -212,21 +231,31 @@ class PtraceTracer:
             # amd64, FXSAVE
             self.fpr = user_fpregs_struct()
             if 0 == self.libc.ptrace(PTRACE_GETFPREGS, self.pid, None, ctypes.byref(self.fpr)):
-                self.support_fpr = True
+                self.use_fxsave = True
 
     def setup_call(self, func_addr, arg):
+        """
+        Prepare stack and regs to function call.
+
+        :func_addr: addres of callable function
+        :arg: argument of the function
+        """
+        # setup stack
         rsp = self.gpr.rsp
-        rsp = rsp & 0xfffffffffffffff0 # align
-        rsp = rsp - 128 # red zone
+        rsp = rsp & 0xfffffffffffffff0  # align
+        rsp = rsp - 128  # red zone
         return_addr = rsp - 1
-        rsp = rsp - 16 # stay align
-        rsp = rsp - 8 # return addr
+        rsp = rsp - 16  # stay align
+        rsp = rsp - 8  # return addr
 
+        # RESTORE state
         self.write_word(rsp, return_addr)
-        self.write_word(return_addr, int("cc", base=16)) # SIGSEGV + SEGV_ACCERR
+        # SIGSEGV + SEGV_ACCERR
+        self.write_word(return_addr, int("cc", base=16))
 
-        #if 0 != self.libc.ptrace(PTRACE_POKETEXT, self.pid, ctypes.c_void_p(self.addr), self.old_code):
-        #    fail_program(self.pid, "ptrace_poketext")
+        # if 0 != self.libc.ptrace(PTRACE_POKETEXT, self.pid,
+        #                          ctypes.c_void_p(self.addr), self.old_code):
+        #     fail_program(self.pid, "ptrace_poketext")
 
         regs = copy.deepcopy(self.gpr)
         regs.rsp = rsp
@@ -255,8 +284,8 @@ class PtraceTracer:
         if 0 != self.libc.ptrace(PTRACE_GETSIGINFO, self.pid, None, ctypes.byref(siginfo)):
             fail_program(self.pid, "ptrace_getsiginfo")
 
-        if signal.SIGSEGV.value == siginfo.sigsegv.si_signo:
-            print(siginfo.sigsegv.si_code, hex(siginfo.sigsegv.si_addr))
+        # if signal.SIGSEGV.value == siginfo.sigsegv.si_signo:
+        #     print(siginfo.sigsegv.si_code, hex(siginfo.sigsegv.si_addr))
 
         siginfo = siginfo_struct()
         siginfo.si_signo = signal.SIGINT.value
@@ -271,7 +300,7 @@ class PtraceTracer:
         if 0 != self.libc.ptrace(PTRACE_GETREGS, self.pid, None, ctypes.byref(regs)):
             fail_program(self.pid, "ptrace_getregs")
 
-        return regs.rax;
+        return regs.rax
 
     def call_function(self, func_addr, arg=0):
         self.save_regs()
@@ -284,7 +313,7 @@ class PtraceTracer:
         stat = os.waitpid(self.pid, WALL)
         if os.WIFSTOPPED(stat[1]):
             s = os.WSTOPSIG(stat[1])
-            if (signal.SIGSEGV.value != s):
+            if signal.SIGSEGV.value != s:
                 fail_program(self.pid, "ptrace_cont",
                              "Wrong signal is {}".format(signal.Signals(s)))
 
@@ -304,7 +333,7 @@ class PtraceTracer:
         if 0 != self.libc.ptrace(PTRACE_POKEDATA, self.pid, addr, word):
             fail_program(self.pid, "ptrace_pokedata(addr={}, word={})".format(addr, word))
 
-    def write_data(self, addr, data, limit = 1024):
+    def write_data(self, addr, data, limit=1024):
         if not addr:
             print("write_data(): addr is empty")
             return
@@ -320,7 +349,7 @@ class PtraceTracer:
                 fail_program(self.pid, "ptrace_pokedata")
             addr += wsize
 
-    def read_raw_data(self, addr, is_string = True, limit = 1024):
+    def read_raw_data(self, addr, is_string=True, limit=1024):
         if not addr:
             return b""
 
@@ -339,6 +368,6 @@ class PtraceTracer:
 
         return ret
 
-    def read_data(self, addr, is_string = True, limit = 1024):
+    def read_data(self, addr, is_string=True, limit=1024):
         bdata = self.read_raw_data(addr, is_string, limit)
         return bdata.decode("utf-8")

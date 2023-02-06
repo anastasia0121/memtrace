@@ -1,17 +1,35 @@
+"""
+*.mt file parser
+"""
 from functools import cmp_to_key
-from os.path import basename
 from subprocess import Popen, PIPE
 import os
 import signal
+import sys
 
 
-def read_int(fh):
-        data = fh.read(8)
-        if data:
-            return int.from_bytes(data, byteorder='little', signed=False)
-        return 0
+def read_int(mt_file):
+    """
+    Read uint64_t value from file.
+
+    :mt_file: binary file
+    :return: read value or 0
+    """
+    size = 8
+    data = mt_file.read(size)
+    return int.from_bytes(data, byteorder='little', signed=False) if data else 0
+
 
 def cmp_stacks(a, b):
+    """
+    Comorator for allocation points.
+    1. Compare not freed memory
+    2. Compare allocated memory (freed and not freed)
+
+    :a: value to compare
+    :b: value to compare
+    :return: -1 (a > b) / 1 (a < b) / 0 (a == b)
+    """
     a_not_freed = a.info.allocated - a.info.freed
     b_not_freed = b.info.allocated - b.info.freed
     if (a_not_freed == b_not_freed) and (a.info.allocated == b.info.allocated):
@@ -21,23 +39,42 @@ def cmp_stacks(a, b):
     else:
         return -1 if b.info.allocated < a.info.allocated else 1
 
-class AllocationPoint(object):
+
+class AllocationPoint:
+    """
+    Information about a code point where malloc() was called.
+    """
     def __init__(self, allocated, allocated_count, freed, freed_count, stack):
+        """
+        :allocated: size of all allocations
+        :allocated_count: number of allocations
+        :freed: size of all deallocations
+        :freed_count: number of deallocations
+        :stack: code point
+        """
         self.info = Statistics(allocated, allocated_count, freed, freed_count)
         self.stack = stack
 
 
-class LinkedLibrary(object):
-    def __init__(self):
-        self.mapped_addr = 0
-        self.begin = 0
-        self.end = 0
-        self.path = ""
+class SharedLibrary:
+    """
+    Shared library description.
+    """
+    def __init__(self, mapped_addr=0, v_addr=0, memsize=0, path=""):
+        self.mapped_addr = mapped_addr
+        self.v_addr = v_addr
+        self.memsize = memsize
+        self.path = path
+        self.begin = mapped_addr + v_addr
+        self.end = self.begin + memsize
         self.symbols = []
 
 
-class Statistics(object):
-    def __init__(self, allocated = 0, allocated_count = 0, freed = 0, freed_count = 0):
+class Statistics:
+    """
+    Statistics about allocation(s)/deallocation(s)
+    """
+    def __init__(self, allocated=0, allocated_count=0, freed=0, freed_count=0):
         self.allocated = allocated
         self.allocated_count = allocated_count
         self.freed = freed
@@ -50,7 +87,11 @@ class Statistics(object):
         self.freed_count += info.freed_count
 
 
-class DataStorage(object):
+class DataStorage:
+    """
+    Data about all allocations/deallocations.
+    Data about all loaded libraries.
+    """
     def __init__(self):
         self.stats = Statistics()
         self.duration = 0
@@ -59,85 +100,98 @@ class DataStorage(object):
         self.version = 1
 
     def add_lib_info(self, mapped_addr, v_addr, memsize, path):
-        lib = LinkedLibrary()
-        lib.mapped_addr = mapped_addr
-        lib.v_addr = v_addr
-        lib.memsize = memsize
-        lib.path = path
-        lib.begin = lib.mapped_addr + lib.v_addr
-        lib.end = lib.begin + lib.memsize
+        """
+        Add information about shared library.
+        """
+        lib = SharedLibrary(mapped_addr, v_addr, memsize, path)
         self.mapper.append(lib)
 
     def add_alloc_info(self, allocated, allocated_count, freed, freed_count, stack):
-        alloc_info = AllocationPoint(allocated, allocated_count, freed, freed_count, stack)
+        """
+        Add information code point and
+        all allocations/deallocations in the point.
+        """
+        alloc_info = AllocationPoint(allocated, allocated_count,
+                                     freed, freed_count,
+                                     stack)
         self.stats.add_info(alloc_info.info)
         self.stacks_info.append(alloc_info)
 
     def init_from_file(self, fname):
+        """
+        Load data from file.
+
+        :fname: *.mt file
+        :return: nothing
+        """
         with open(fname, 'rb') as fh:
             while True:
-                type = fh.read(1)
-                if not type:
+                record_type = fh.read(1)
+                if not record_type:
                     return
 
-                if type == b'v':
+                if record_type == b'v':
                     # read common information: v, version
                     version = read_int(fh)
                     if version > self.version:
-                        print("Server version is heigher than the memtrace version.")
-                        print("Please, update memtrace utility.")
-                        exit()
+                        sys.exit("Libmetrace version is heigher than the client."
+                                 "Please, update memtrace utility.")
 
-                    usableSize = fh.read(1)
+                    _usable_size = fh.read(1)
                     read_int(fh)
                     read_int(fh)
                     read_int(fh)
                     read_int(fh)
                     read_int(fh)
 
-                elif type == b's':
-                    # read library: s, addr, size of path, path
+                elif record_type == b's':
+                    # read library:
+                    # s, addr, v_addr, so_memsize, size of path, path
                     mapped_addr = read_int(fh)
                     v_addr = read_int(fh)
                     memsize = read_int(fh)
                     size = read_int(fh)
-
                     path = fh.read(size).decode("utf-8")
-                    self.add_lib_info(mapped_addr, v_addr, memsize, path);
+                    self.add_lib_info(mapped_addr, v_addr, memsize, path)
 
-                elif type == b'm':
-                    # m, aggregated info (allocated, allocation counter, freed, freed counter),
+                elif record_type == b'm':
+                    # m, aggregated info
+                    # (allocated, allocation counter,
+                    # freed, freed counter),
                     # size of stack, stack
 
                     allocated = read_int(fh)
                     allocated_count = read_int(fh)
                     freed = read_int(fh)
                     freed_count = read_int(fh)
-                    
+
                     stack_lenght = read_int(fh)
                     if stack_lenght == 0:
                         print("Cannot recognize stack")
                     elif stack_lenght > 128:
-                        print("Size of a stack is too huge, the data file is broken")
-                        exit()
+                        sys.exit("Size of a stack is too huge, the data file is broken")
                     else:
                         stack = []
-                        for i in range(stack_lenght):
+                        for _i in range(stack_lenght):
                             frame = read_int(fh)
                             stack.append(frame)
 
-                        self.add_alloc_info(allocated, allocated_count, freed, freed_count, stack)
+                        self.add_alloc_info(allocated, allocated_count,
+                                            freed, freed_count, stack)
                 else:
-                    print("Cannot recognize type")
-                    exit()
+                    sys.exit("Cannot recognize record type")
 
         sorted_stacks_info = sorted(self.stacks_info, key=cmp_to_key(cmp_stacks))
         self.stacks_info = sorted_stacks_info
 
 
-class Symbolizer(object):
+class Symbolizer:
+    """
+    Read input addresses and return
+    corresponding source code locations.
+    """
     def __init__(self):
-        self.symbolizer = Popen('llvm-symbolizer',
+        self.symbolizer = Popen("llvm-symbolizer",
                                 stdin=PIPE, stdout=PIPE, stderr=PIPE,
                                 universal_newlines=True, bufsize=1)
 
@@ -145,6 +199,13 @@ class Symbolizer(object):
         os.kill(self.symbolizer.pid, signal.SIGKILL)
 
     def symbolize(self, stack, mapper):
+        """
+        Translate adressed to human readable stack.
+
+        :stack: list with integer numbers
+        :mapper: libraries information
+        :return: symbols for stack
+        """
         output = ""
         for addr in stack:
             lib = next((l for l in mapper if (l.begin < addr) and (l.end > addr)), None)
@@ -162,6 +223,9 @@ class Symbolizer(object):
         return output
 
     def get_symbols(self, lib, offset):
+        """
+        :return: symbols by offset
+        """
         input = "{} {}\n".format(lib.path, hex(offset))
         print(input, file=self.symbolizer.stdin, flush=True)
         pout = []
@@ -175,7 +239,7 @@ class Symbolizer(object):
         return pout
 
 
-class Parser(object):
+class Parser:
     def __init__(self, mt_fname):
         self.ds = DataStorage()
         self.ds.init_from_file(mt_fname)
@@ -185,18 +249,16 @@ class Parser(object):
         symbolizer = Symbolizer()
 
         for stack_info in ds.stacks_info:
-            not_freed = stack_info.info.allocated - stack_info.info.freed
-            if not not_freed:
+            memsize = stack_info.info.allocated - stack_info.info.freed
+            if not memsize:
                 continue
-            not_freed_count = stack_info.info.allocated_count - stack_info.info.freed_count
-            average = int(not_freed / not_freed_count)
-
-            allocated_str = "Allocated {allocated} bytes in {allocated_count} allocations ({average} bytes average)"
-            print(allocated_str.format(allocated = not_freed, allocated_count = not_freed_count, average = average))
+            cnt = stack_info.info.allocated_count - stack_info.info.freed_count
+            avg = int(not_freed / not_freed_count)
+            print(f"Allocated {memsize} bytes in {cnt} allocations ({avg} bytes average)")
 
             output = symbolizer.symbolize(stack_info.stack, ds.mapper)
             print(output)
 
-        not_freed_count = ds.stats.allocated_count - ds.stats.freed_count;
-        not_freed = ds.stats.allocated - ds.stats.freed;
-        total_str = "Total: allocation {allocated_count} of total size {allocated}\n";
+        memsize = ds.stats.allocated_count - ds.stats.freed_count
+        cnt = ds.stats.allocated - ds.stats.freed
+        print(f"Total: allocation {memsize} of total size {cnt}")

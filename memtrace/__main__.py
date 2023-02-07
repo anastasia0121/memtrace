@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 
-import sys
+import argparse
 import os
+import platform
 import signal
+import sys
+
 from datetime import datetime
 from pathlib import Path
-import platform
-from optparse import OptionParser
-from optparse import OptionGroup
 
-from parser import Parser
 from gdb_tracer import GDBTracer
+from parser import Parser
 from ptrace import PtraceTracer
 from util import fail_program, find_libs_segments, find_function_or_fail
 
@@ -48,35 +48,36 @@ def main_func():
     if platform.uname()[4] != "x86_64":
         print("only x86_64 is supported")
 
-    parser = OptionParser()
+    parser = argparse.ArgumentParser(
+        prog = "memtrace",
+        description = "memtrace is a tool to trace allocations in c++ applications.")
 
-    parser.add_option("-p", "--pid",
-                      dest="pid", action="store", type="int",
-                      help="process identifier")
-    parser.add_option("-f", "--file",
-                      dest="mt_fname", action="store", metavar="FILE",
-                      help="existing mt file")
-    parser.add_option("-g", "--gdb",
-                      dest="gdb", action="store_true",
-                      help="use gdb instead of manual ptrace calls")
+    parser.add_argument("-p", "--pid",
+                        dest="pid", action="store", type=int,
+                        help="process identifier")
+    parser.add_argument("-f", "--file",
+                        dest="mt_fname", action="store", metavar="FILE",
+                        help="existing mt file")
+    parser.add_argument("-g", "--gdb",
+                        dest="gdb", action="store_true",
+                        help="use gdb instead of manual ptrace calls")
 
-    actions_group = OptionGroup(parser, "Actions",
-                                "Tracing use interactiv mode by default. "
-                                "If only enable/disable/status are required. "
-                                "Set one of following options:")
-    parser.add_option_group(actions_group)
+    actions_group = parser.add_argument_group(
+        "Actions",
+        "Tracing use interactiv mode by default. "
+        "If only enable/disable/status are required. "
+        "Set one of following options:")
+    actions_group.add_argument("-e", "--enable",
+                               dest="enable", action="store_true",
+                               help="enable tracing")
+    actions_group.add_argument("-d", "--disable",
+                               dest="disable", action="store_true",
+                               help="disable tracing")
+    actions_group.add_argument("-s", "--status",
+                               dest="status", action="store_true",
+                               help="current status of tracing")
 
-    actions_group.add_option("-e", "--enable",
-                             dest="enable", action="store_true",
-                             help="enable tracing")
-    actions_group.add_option("-d", "--disable",
-                             dest="disable", action="store_true",
-                             help="disable tracing")
-    actions_group.add_option("-s", "--status",
-                             dest="status", action="store_true",
-                             help="current status of tracing")
-
-    (options, _args) = parser.parse_args()
+    options = parser.parse_args()
 
     pid = options.pid
     gdb = options.gdb
@@ -103,8 +104,8 @@ def main_func():
 
     # handel the exsisting mt file without tracing process
     if mt_fname:
-        parser = Parser(mt_fname)
-        parser.report()
+        mt_parser = Parser(mt_fname)
+        mt_parser.report()
         sys.exit(0)
 
     # if we kill tracer, we can kill child process
@@ -158,8 +159,8 @@ def main_func():
 
         print(f"mt file is {mt_fname}.")
 
-        parser = Parser(mt_fname)
-        parser.report()
+        mt_parser = Parser(mt_fname)
+        mt_parser.report()
 
 
 main_func()

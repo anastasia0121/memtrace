@@ -1,12 +1,12 @@
 """
 *.mt file parser
 """
-from functools import cmp_to_key
-from subprocess import Popen, PIPE
 import os
 import signal
 import sys
 
+from functools import cmp_to_key
+from subprocess import Popen, PIPE
 
 def read_int(mt_file):
     """
@@ -226,8 +226,8 @@ class Symbolizer:
         """
         :return: symbols by offset
         """
-        input = "{} {}\n".format(lib.path, hex(offset))
-        print(input, file=self.symbolizer.stdin, flush=True)
+        in_str = "{} {}\n".format(lib.path, hex(offset))
+        print(in_str, file=self.symbolizer.stdin, flush=True)
         pout = []
         while True:
             line = self.symbolizer.stdout.readline()
@@ -253,7 +253,7 @@ class Parser:
             if not memsize:
                 continue
             cnt = stack_info.info.allocated_count - stack_info.info.freed_count
-            avg = int(not_freed / not_freed_count)
+            avg = int(memsize / cnt)
             print(f"Allocated {memsize} bytes in {cnt} allocations ({avg} bytes average)")
 
             output = symbolizer.symbolize(stack_info.stack, ds.mapper)

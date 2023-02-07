@@ -2,8 +2,9 @@
 Common functions.
 """
 import ctypes
-import sys
 import os
+import sys
+
 from elftools.elf.elffile import ELFFile
 
 

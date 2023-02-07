@@ -18,23 +18,24 @@ If you want to build the memtrace tests, you have to pass `-DENABLE_TESTS=ON` wh
 `LD_PRELOAD=/path/to/libmemtrace.so application`
 3. launch memtrace client with required options.
 ```
-python3 -m memtrace --help
-Usage: __main__.py [options]
+$ python3 -m memtrace --help
+usage: memtrace [-h] [-p PID] [-f FILE] [-g] [-e] [-d] [-s]
 
-Options:
+memtrace is a tool to trace allocations in c++ applications.
+
+options:
   -h, --help            show this help message and exit
-  -p PID, --pid=PID     process identifier
-  -f FILE, --file=FILE  existing mt file
+  -p PID, --pid PID     process identifier
+  -f FILE, --file FILE  existing mt file
   -g, --gdb             use gdb instead of manual ptrace calls
 
-  Actions:
-    Tracing use interactiv mode by default. If only enable/disable/status
-    are required. Set one of following options:
+Actions:
+  Tracing use interactiv mode by default. If only enable/disable/status are
+  required. Set one of following options:
 
-    -e, --enable        enable tracing
-    -d, --disable       disable tracing
-    -s, --status        current status of tracing
-
+  -e, --enable          enable tracing
+  -d, --disable         disable tracing
+  -s, --status          current status of tracing
 ```
 
 # Results

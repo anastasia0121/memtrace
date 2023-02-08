@@ -234,7 +234,7 @@ class Symbolizer:
     corresponding source code locations.
     """
     def __init__(self):
-        self.symbolizer = Popen("llvm-symbolizer",
+        self.symbolizer = Popen("llvm-symbolizer-14",
                                 stdin=PIPE, stdout=PIPE, stderr=PIPE,
                                 universal_newlines=True, bufsize=1)
 
@@ -299,15 +299,14 @@ class Parser:
         cnt = stack_info.info.allocated_count - stack_info.info.freed_count
         avg = int(memsize / cnt)
         print(f"Allocated {memsize} bytes in {cnt} allocations ({avg} bytes average)")
-
         output = symbolizer.symbolize(stack_info.stack, self.storage.mapper)
         print(output)
-
-        memsize = self.storage.stats.allocated_count - self.storage.stats.freed_count
-        cnt = self.storage.stats.allocated - self.storage.stats.freed
-        print(f"Total: allocation {memsize} of total size {cnt}")
 
     def report(self):
         with contextlib.closing(Symbolizer()) as symbolizer:
             for stack_info in self.storage.stacks_info:
                 self.report_stack(symbolizer, stack_info)
+
+            memsize = self.storage.stats.allocated_count - self.storage.stats.freed_count
+            cnt = self.storage.stats.allocated - self.storage.stats.freed
+            print(f"Total: allocation {memsize} of total size {cnt}")

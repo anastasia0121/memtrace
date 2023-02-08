@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from gdb_tracer import GDBTracer
-from parser import Parser
+from mt_parser import Parser
 from ptrace import PtraceTracer
 from util import fail_program, find_libs_segments, find_function_or_fail
 
@@ -147,11 +147,11 @@ def main_func():
         trace_dir = Path(os.getcwd())
         mt_fname = trace_dir / datetime.now().strftime(fname)
         mt_fname_addr = tracer.call_function(get_shared_data_addr, 0)
-        tracer.write_data(mt_fname_addr, bytes(str(mt_fname), encoding="utf-8"))
+        tracer.write_string(mt_fname_addr, str(mt_fname))
 
         ret = tracer.call_function(disable_addr)
         if 0 != ret:
-            error = tracer.read_data(ret)
+            error = tracer.read_string(ret)
             if error:
                 fail_program(pid, "disable_memory_tracing", error)
 

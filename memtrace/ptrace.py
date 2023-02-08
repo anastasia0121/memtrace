@@ -39,6 +39,7 @@ SI_MAX_SIZE = 128
 SI_PAD_SIZE = int(SI_MAX_SIZE / ctypes.sizeof(ctypes.c_int))
 SI_USER = 0
 
+WSIZE = ctypes.sizeof(ctypes.c_long)
 
 class UserFpregsStruct(ctypes.Structure):
     """
@@ -242,6 +243,7 @@ class PtraceTracer:
         self.tids = []
         self.libc = self.setup_ptrace_call()
         self.reg_cache = RegCache(self.pid, self.libc)
+        self.used_memory = []
 
     def setup_ptrace_call(self):
         """
@@ -330,16 +332,32 @@ class PtraceTracer:
         regs.orig_eax = -1
 
         # RESTORE state
+        self.save_word(rsp)
         self.write_word(rsp, return_addr)
-        # SIGSEGV + SEGV_ACCERR
-        self.write_word(return_addr, int("cc", base=16))
 
-        # if 0 != self.libc.ptrace(PTRACE_POKETEXT, self.pid,
-        #                          ctypes.c_void_p(self.addr), self.old_code):
-        #     fail_program(self.pid, "ptrace_poketext")
+        # SIGSEGV + SEGV_ACCERR
+        self.save_word(return_addr)
+        int3 = int("cc", base=16)
+        self.write_word(return_addr, int3)
 
         if 0 != self.libc.ptrace(PTRACE_SETREGS, self.pid, None, ctypes.byref(regs)):
             fail_program(self.pid, "setup_call, ptrace_setregs")
+
+    def save_word(self, addr):
+        """
+        Save word from tracee process memory.
+
+        :addr: addres where word is placed
+        """
+        word = self.read_word(addr)
+        self.used_memory.append((addr, word))
+
+    def restore_words(self):
+        """
+        Restore all memorized words.
+        """
+        for addr, word in self.used_memory:
+            self.write_word(addr, word)
 
     def replace_sigsegv(self):
         """
@@ -393,12 +411,13 @@ class PtraceTracer:
         ret = self.get_return_value()
 
         self.reg_cache.restore_regs()
+        self.restore_words()
 
         return ret
 
     def write_word(self, addr, word):
         """
-        Write word into tracee process memory
+        Write word into tracee process memory.
 
         :addr: address to write
         :word: word to write
@@ -410,41 +429,62 @@ class PtraceTracer:
         if 0 != self.libc.ptrace(PTRACE_POKEDATA, self.pid, addr, word):
             fail_program(self.pid, f"ptrace_pokedata(addr={addr}, word={word})")
 
-    def write_data(self, addr, data, limit=1024):
+    def write_string(self, addr, data, limit=1024):
+        """
+        Write string into tracee process memory.
+
+        :addr: start address to write
+        :data: string to write
+        :limit: max string length. 1024 by default
+        """
         if not addr:
             print("write_data(): addr is empty")
             return
 
-        if len(data) > limit:
+        bdata = bytes(data, encoding="utf-8")
+        if len(bdata) > limit:
             fail_program(self.pid, "write_data", "limit overflow")
 
-        wsize = ctypes.sizeof(ctypes.c_long)
-        words = [data[i:i + wsize] for i in range(0, len(data), wsize)]
-        for word in words:
-            word_bytes = int.from_bytes(word, byteorder="little")
-            if 0 != self.libc.ptrace(PTRACE_POKEDATA, self.pid, addr, word_bytes):
-                fail_program(self.pid, "ptrace_pokedata")
-            addr += wsize
+        words = [bdata[i:i + WSIZE] for i in range(0, len(bdata), WSIZE)]
+        for word_bytes in words:
+            word = int.from_bytes(word_bytes, byteorder="little")
+            self.write_word(addr, word)
+            addr += WSIZE
 
-    def read_raw_data(self, addr, is_string=True, limit=1024):
+    def read_word(self, addr):
+        """
+        Read word from tracee process memory.
+
+        :addr: address to read
+        :return: read word
+        """
         if not addr:
-            return b""
+            return 0
+
+        word = self.libc.ptrace(PTRACE_PEEKDATA, self.pid, addr, None)
+        if -1 == word:
+            fail_program(self.pid, f"ptrace_peekdata({addr})")
+
+        return word
+
+    def read_string(self, addr, limit=1024):
+        """
+        Read string from tracee process memory.
+
+        :addr: start address to read
+        :limit: max string length. 1024 by default
+        :return: read string
+        """
+        if not addr:
+            return ""
 
         max_addr = addr + limit
-        wsize = ctypes.sizeof(ctypes.c_long)
         ret = b""
         while addr < max_addr:
-            word = self.libc.ptrace(PTRACE_PEEKDATA, self.pid, addr, None)
-            if -1 == word:
-                fail_program(self.pid, "ptrace_peekdata")
-            if is_string and (0 == word):
+            word = self.read_word(addr)
+            if 0 == word:
                 break
-            addr += wsize
+            addr += WSIZE
+            ret += word.to_bytes(WSIZE, byteorder='little')
 
-            ret += word.to_bytes(wsize, byteorder='little')
-
-        return ret
-
-    def read_data(self, addr, is_string=True, limit=1024):
-        bdata = self.read_raw_data(addr, is_string, limit)
-        return bdata.decode("utf-8")
+        return ret.decode("utf-8")

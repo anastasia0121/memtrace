@@ -5,11 +5,6 @@ from subprocess import Popen, PIPE
 class GDBTracer:
     def __init__(self, pid):
         self.pid = pid
-        self.attached = False
-
-    def __del__(self):
-        if self.attached:
-            self.detach()
 
     def attach(self):
         self.gdb = Popen(["gdb", "attach", str(self.pid), "-ex", "p \"I am ready\""],
@@ -18,10 +13,7 @@ class GDBTracer:
 
         while True:
             line = self.gdb.stdout.readline()
-            if not line or line == "":
-                break
-            if "I am ready" in line:
-                self.attached = True
+            if (not line) or (line == "") or ("I am ready" in line):
                 break
 
     def detach(self):
@@ -29,7 +21,6 @@ class GDBTracer:
         print(cmd, file=self.gdb.stdin, flush=True)
         cmd = "y"
         print(cmd, file=self.gdb.stdin, flush=True)
-        self.attached = False
 
     def call_function(self, func_addr, arg=0):
         cmd = f"p ((void *(*)()){func_addr})({arg})"
@@ -40,15 +31,14 @@ class GDBTracer:
             return int(line[addr_idx: -1].split()[0], 16)
         return 0
 
-    def write_data(self, addr, data):
+    def write_string(self, addr, data):
         if not addr:
             return
-        str_data = data.decode("utf-8")
-        cmd = f"p strcpy({addr}, \"{str_data}\")"
+        cmd = f"p strcpy({addr}, \"{data}\")"
         print(cmd, file=self.gdb.stdin, flush=True)
         _line = self.gdb.stdout.readline()
 
-    def read_data(self, addr):
+    def read_string(self, addr):
         if not addr:
             return ""
         cmd = f"p (const char *){addr}"

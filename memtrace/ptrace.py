@@ -291,8 +291,8 @@ class PtraceTracer:
 
     def attach(self):
         """
-        Attach to process,
-        stop all threads
+        Attach to process.
+        Stop all threads.
         """
         self.tids = self.find_process_threads()
         for tid in self.tids:
@@ -302,7 +302,7 @@ class PtraceTracer:
 
     def detach(self):
         """
-        detach
+        Detach.
         """
         for tid in self.tids:
             if 0 != self.libc.ptrace(PTRACE_DETACH, tid, None, None):

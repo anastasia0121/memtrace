@@ -44,6 +44,16 @@ def find_tracing_functions(pid):
     return enable_addr, disable_addr, get_data_addr
 
 
+def generate_mt_fname(pid):
+    """
+    Generate name for the new mt file.
+    """
+    fname = f"{pid}-%m%d%Y-%H%M%S.mt\0"
+    trace_dir = Path(os.getcwd())
+    mt_fname = trace_dir / datetime.now().strftime(fname)
+
+    return mt_fname
+
 def main_func():
     if platform.uname()[4] != "x86_64":
         print("only x86_64 is supported")
@@ -135,17 +145,14 @@ def main_func():
         if not ret:
             print(f"Tracing for {pid} is disabled.")
         else:
-            print("")
+            print(f"Tracing for {pid} is enabled.")
         tracer.detach()
 
     # inject disable
     if interactive or disable:
         tracer.attach()
 
-        # we need a filename
-        fname = f"{pid}-%m%d%Y-%H%M%S.mt"
-        trace_dir = Path(os.getcwd())
-        mt_fname = trace_dir / datetime.now().strftime(fname)
+        mt_fname = generate_mt_fname(pid)
         mt_fname_addr = tracer.call_function(get_shared_data_addr, 0)
         tracer.write_string(mt_fname_addr, str(mt_fname))
 

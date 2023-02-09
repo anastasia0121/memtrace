@@ -120,6 +120,14 @@ class SharedLibrary:
         self.end = self.begin + memsize
         self.symbols = []
 
+    def has(self, addr):
+        """
+        Check if address belongs the library.
+
+        :return: boolean value
+        """
+        return (addr > self.begin) and (addr < self.end)
+
 
 class Statistics:
     """
@@ -130,6 +138,14 @@ class Statistics:
         self.allocated_count = allocated_count
         self.freed = freed
         self.freed_count = freed_count
+
+    def not_freed(self):
+        """
+        :return: allocated but not freed memory and memory count.
+        """
+        memsize = self.allocated - self.freed
+        cnt = self.allocated_count - self.freed_count
+        return memsize, cnt
 
     def add_info(self, info):
         """
@@ -182,7 +198,7 @@ class DataStorage:
             while True:
                 record_type = mt_file.read_byte()
                 if not record_type:
-                    return
+                    break
 
                 if record_type == b'v':
                     # read common information: v, version
@@ -234,7 +250,7 @@ class Symbolizer:
     corresponding source code locations.
     """
     def __init__(self):
-        self.symbolizer = Popen("llvm-symbolizer-14",
+        self.symbolizer = Popen("llvm-symbolizer",
                                 stdin=PIPE, stdout=PIPE, stderr=PIPE,
                                 universal_newlines=True, bufsize=1)
 
@@ -256,7 +272,7 @@ class Symbolizer:
         """
         output = ""
         for addr in stack:
-            lib = next((l for l in mapper if (l.begin < addr) and (l.end > addr)), None)
+            lib = next((so for so in mapper if so.has(addr)), None)
             if not lib:
                 output += "\t << stack pointer broken >>\n"
                 continue
@@ -293,10 +309,9 @@ class Parser:
         self.storage.init_from_file(mt_fname)
 
     def report_stack(self, symbolizer, stack_info):
-        memsize = stack_info.info.allocated - stack_info.info.freed
+        memsize, cnt = stack_info.info.not_freed()
         if not memsize:
             return
-        cnt = stack_info.info.allocated_count - stack_info.info.freed_count
         avg = int(memsize / cnt)
         print(f"Allocated {memsize} bytes in {cnt} allocations ({avg} bytes average)")
         output = symbolizer.symbolize(stack_info.stack, self.storage.mapper)
@@ -307,6 +322,5 @@ class Parser:
             for stack_info in self.storage.stacks_info:
                 self.report_stack(symbolizer, stack_info)
 
-            memsize = self.storage.stats.allocated_count - self.storage.stats.freed_count
-            cnt = self.storage.stats.allocated - self.storage.stats.freed
-            print(f"Total: allocation {memsize} of total size {cnt}")
+            memsize, cnt = self.storage.stats.not_freed()
+            print(f"Total: allocation {cnt} of total size {memsize}")

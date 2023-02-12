@@ -1,1 +1,2 @@
 pyelftools==0.29
+rich==13.3.1

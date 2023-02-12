@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from gdb_tracer import GDBTracer
-from mt_parser import Parser
+from report import Report
 from ptrace import PtraceTracer
 from util import fail_program, find_libs_segments, find_function_or_fail
 
@@ -87,6 +87,13 @@ def main_func():
                                dest="status", action="store_true",
                                help="current status of tracing")
 
+    actions_group = parser.add_argument_group(
+        "Output",
+        "Output options.")
+    actions_group.add_argument("-t", "--tree",
+                               dest="tree", action="store_true",
+                               help="out as tree")
+
     options = parser.parse_args()
 
     pid = options.pid
@@ -96,13 +103,17 @@ def main_func():
     status = options.status
     interactive = (not disable) and (not enable) and (not status)
     mt_fname = options.mt_fname
-
+    tree = options.tree
+    
     if mt_fname and (pid or enable or disable or status or gdb):
         fail_program(0, "parse_args",
                      "file option cannot be set with other options together")
 
     if (not pid) and (not mt_fname):
         fail_program(0, "parse_args", "Pid is not specified.")
+
+    if tree and (not interactive) and (not disable) and (not mt_fname):
+        fail_program(pid, "parse_args", "Tree option with not output launch.")
 
     if (enable and disable) or (disable and status) or (enable and status):
         fail_program(pid, "parse_args",
@@ -114,8 +125,11 @@ def main_func():
 
     # handel the exsisting mt file without tracing process
     if mt_fname:
-        mt_parser = Parser(mt_fname)
-        mt_parser.report()
+        report = Report(mt_fname)
+        if tree:
+            report.report_tree()
+        else:
+            report.report_txt()
         sys.exit(0)
 
     # if we kill tracer, we can kill child process
@@ -166,8 +180,11 @@ def main_func():
 
         print(f"mt file is {mt_fname}.")
 
-        mt_parser = Parser(mt_fname)
-        mt_parser.report()
+        report = Report(mt_fname)
+        if tree:
+            report.report_tree()
+        else:
+            report.report_txt()
 
 
 main_func()

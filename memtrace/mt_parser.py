@@ -7,7 +7,6 @@ import signal
 import sys
 
 from functools import cmp_to_key
-from subprocess import Popen, PIPE
 
 class MTFile:
     """
@@ -157,7 +156,7 @@ class Statistics:
         self.freed_count += info.freed_count
 
 
-class DataStorage:
+class MTParser:
     """
     Data about all allocations/deallocations.
     Data about all loaded libraries.
@@ -187,7 +186,7 @@ class DataStorage:
         self.stats.add_info(alloc_info.info)
         self.stacks_info.append(alloc_info)
 
-    def init_from_file(self, fname):
+    def parse(self, fname):
         """
         Load data from file.
 
@@ -243,84 +242,3 @@ class DataStorage:
         sorted_stacks_info = sorted(self.stacks_info, key=cmp_to_key(cmp_stacks))
         self.stacks_info = sorted_stacks_info
 
-
-class Symbolizer:
-    """
-    Read input addresses and return
-    corresponding source code locations.
-    """
-    def __init__(self):
-        self.symbolizer = Popen("llvm-symbolizer",
-                                stdin=PIPE, stdout=PIPE, stderr=PIPE,
-                                universal_newlines=True, bufsize=1)
-
-    def close(self):
-        """
-        Kill symbolizer process.
-        """
-        if self.symbolizer:
-            os.kill(self.symbolizer.pid, signal.SIGKILL)
-            self.symbolizer = None
-
-    def symbolize(self, stack, mapper):
-        """
-        Translate adressed to human readable stack.
-
-        :stack: list with integer numbers
-        :mapper: libraries information
-        :return: symbols for stack
-        """
-        output = ""
-        for addr in stack:
-            lib = next((so for so in mapper if so.has(addr)), None)
-            if not lib:
-                output += "\t << stack pointer broken >>\n"
-                continue
-
-            local_addr = addr - lib.mapped_addr
-            symbols = self.get_symbols(lib, local_addr)
-            for i in range(0, len(symbols), 2):
-                if symbols[i + 1] == 0:
-                    output += f"\t{symbols[i]}\tfrom {lib.path}\n"
-                else:
-                    output += f"\t{symbols[i]}\tat {symbols[i+1]}\n"
-        return output
-
-    def get_symbols(self, lib, offset):
-        """
-        :return: symbols by offset
-        """
-        in_str = f"{lib.path} {hex(offset)}\n"
-        print(in_str, file=self.symbolizer.stdin, flush=True)
-        pout = []
-        while True:
-            line = self.symbolizer.stdout.readline()
-            # double white line
-            if len(line) == 1:
-                self.symbolizer.stdout.readline()
-                break
-            pout.append(line.strip())
-        return pout
-
-
-class Parser:
-    def __init__(self, mt_fname):
-        self.storage = DataStorage()
-        self.storage.init_from_file(mt_fname)
-
-    def report_stack(self, symbolizer, stack_info):
-        memsize, cnt = stack_info.info.not_freed()
-        if not memsize:
-            return
-        avg = int(memsize / cnt)
-        print(f"Allocated {memsize} bytes in {cnt} allocations ({avg} bytes average)")
-        output = symbolizer.symbolize(stack_info.stack, self.storage.mapper)
-        print(output)
-
-    def report(self):
-        with contextlib.closing(Symbolizer()) as symbolizer:
-            for stack_info in self.storage.stacks_info:
-                self.report_stack(symbolizer, stack_info)
-
-            memsize, cnt = self.storage.stats.not_freed()
-            print(f"Total: allocation {cnt} of total size {memsize}")

@@ -22,6 +22,9 @@
 #include <mutex>
 #include <shared_mutex>
 
+#define UNW_LOCAL_ONLY
+#include "libunwind.h"
+
 #define LIKELY(e) __builtin_expect(!!(e), 1)
 #define UNLIKELY(e) __builtin_expect(!!(e), 0)
 
@@ -275,6 +278,9 @@ private:
     static __attribute__((always_inline)) inline
     stack_view get_stack(uintptr_t *stack_ptr);
 
+    static __attribute__((always_inline)) inline
+    stack_view get_stack_unw(uintptr_t *stack_ptr);
+
     uint64_t get_slice(void *ptr);
 
     uint64_t get_slice(stack_view sv);
@@ -358,6 +364,27 @@ bool storage::init_stack_bound()
 }
 
 stack_view storage::get_stack(uintptr_t *stack_ptr)
+{
+    unw_context_t uc;
+    unw_cursor_t cursor;
+    if (unw_getcontext(&uc) || unw_init_local(&cursor, &uc)) {
+        return stack_view();
+    }
+
+    unsigned i = 0;
+    while ((i < s_max_stack_length) && (unw_step(&cursor) > 0)) {
+        unw_word_t ip;
+        unw_get_reg(&cursor, UNW_REG_IP, &ip);
+        if (0 == ip) {
+             return stack_view(stack_ptr, i);
+        }
+        stack_ptr[i++] = ip;
+     }
+
+    return stack_view(stack_ptr, i);
+}
+
+stack_view storage::get_stack_unw(uintptr_t *stack_ptr)
 {
     if (UNLIKELY(!init_stack_bound())) {
         return stack_view();

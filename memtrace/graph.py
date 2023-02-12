@@ -66,14 +66,17 @@ class FrameTree:
             level += 1
 
     def out(self):
-        out_tree = Tree(f"🌳 Memory tree:", guide_style="bold bright_blue")
+        out_tree = Tree(f":deciduous_tree: Memory tree:", guide_style="bold bright_blue")
         with contextlib.closing(Symbolizer(prefix=" ")) as symbolizer:
             self.add_node(out_tree, self.tree[0][0], symbolizer)
         print(out_tree)
 
     def add_node(self, parent, node, symbolizer):
-        value = f"🌿 {node.memsize} bytes\n"
-        value += symbolizer.symbolize_addr(node.name, self.storage.mapper)
+        value = f":herb: {node.memsize} bytes\n"
+        if not node.parent:
+            value += " root\n"
+        else:
+            value += symbolizer.symbolize_addr(node.name, self.storage.mapper)
         while len(node.children) == 1:
             node = node.children[0]
             value += symbolizer.symbolize_addr(node.name, self.storage.mapper)

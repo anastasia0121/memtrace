@@ -168,6 +168,8 @@ def main_func():
 
         mt_fname = generate_mt_fname(pid)
         mt_fname_addr = tracer.call_function(get_shared_data_addr, 0)
+        if not mt_fname_addr:
+            fail_program(pid, "disable_memory_tracing", "return address is empty.")
         tracer.write_string(mt_fname_addr, str(mt_fname))
 
         ret = tracer.call_function(disable_addr)

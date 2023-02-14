@@ -6,15 +6,16 @@ import os
 import signal
 import sys
 
+from pathlib import Path
 from rich.tree import Tree
-from rich import print
 
 from mt_parser import MTParser
 from symbolizer import Symbolizer
 
 class MemFrame:
-    def __init__(self, name, parent, index, info):
+    def __init__(self, name, name_index, parent, index, info):
         self.name = name
+        self.name_index = name_index
         self.parent = parent
         self.index = index
         self.children = []
@@ -35,17 +36,22 @@ class FrameTree:
     def __init__(self, storage, max_length=128):
         self.storage = storage
         self.tree = [[] for _ in range(max_length)]
-        self.append_frame(0, 0, self.storage.stats)
+        self.names = []
+        self.append_frame(" root", 0, self.storage.stats)
 
-        root = self.tree[0][0]
-        for info in self.storage.stacks_info:
-            memsize, _cnt = info.info.not_freed()
-            if memsize:
-                info.stack.reverse()
-                self.insert(info.stack, info.info, self.tree[1], 1, root)
+        with contextlib.closing(Symbolizer(prefix=" ")) as symbolizer:
+            root = self.tree[0][0]
+            for info in self.storage.stacks_info:
+                memsize, _cnt = info.info.not_freed()
+                if memsize:
+                    stack_str = symbolizer.symbolize(reversed(info.stack), self.storage.mapper)
+                    stack = stack_str.rstrip().split("\n")
+                    self.insert(stack, info.info, self.tree[1], 1, root)
 
     def append_frame(self, name, level, info, parent=None):
-        frame = MemFrame(name, parent, len(self.tree[level]), info)
+        name_index = len(self.names)
+        self.names.append(name.strip())
+        frame = MemFrame(name, name_index, parent, len(self.tree[level]), info)
         self.tree[level].append(frame)
         if parent:
             parent.add_child(frame)
@@ -65,23 +71,40 @@ class FrameTree:
             parent = self.append_frame(fname, level, info, parent)
             level += 1
 
-    def out(self):
-        out_tree = Tree(f":deciduous_tree: Memory tree:", guide_style="bold bright_blue")
-        with contextlib.closing(Symbolizer(prefix=" ")) as symbolizer:
-            self.add_node(out_tree, self.tree[0][0], symbolizer)
-        print(out_tree)
+    def tree_to_rich(self):
+        rich_tree = Tree(f":deciduous_tree: Memory tree:", guide_style="bold bright_blue")
+        self.node_to_rich(rich_tree, self.tree[0][0])
+        return rich_tree
 
-    def add_node(self, parent, node, symbolizer):
-        value = f":herb: {node.memsize} bytes\n"
-        if not node.parent:
-            value += " root\n"
-        else:
-            value += symbolizer.symbolize_addr(node.name, self.storage.mapper)
+    def node_to_rich(self, rich_tree, node):
+        value = f":herb: {node.memsize} bytes\n{node.name}\n"
         while len(node.children) == 1:
             node = node.children[0]
-            value += symbolizer.symbolize_addr(node.name, self.storage.mapper)
-
-        parent = parent.add(value)
+            value += f"{node.name}\n"
+        rich_tree = rich_tree.add(value)
 
         for ch in node.children:
-            self.add_node(parent, ch, symbolizer)
+            self.node_to_rich(rich_tree, ch)
+
+    def tree_to_json(self):
+        # let names = ["null", "one", "two", "three", "four", "five"];
+        # let treeLevels = [
+        # [{ b: 24, cnt: 1, n: 0, ch: [0, 1], p: 0 } ],
+        # [{ b: 12, cnt: 1, n: 1, ch: [0], p: 0 }, { b: 12, cnt: 1, n: 2, ch: [], p: 0 } ],
+        # [{ b: 2, cnt: 3, n: 3, ch: [], p: 0 }],
+        # ];
+        tree_as_json = "let treeLevels = [\n"
+        tree_as_json += "".join([self.level_to_json(level) for level in self.tree if level])
+        tree_as_json += "".join(f"];\nlet names = {self.names};\n")
+        return tree_as_json
+
+    def level_to_json(self, level):
+        level_as_json = "["
+        level_as_json += "".join([self.node_to_json(node) for node in level])
+        level_as_json += "".join("],\n")
+        return level_as_json
+
+    def node_to_json(self, node):
+        parent_index = node.parent.index if node.parent else 0
+        children = [ch.index for ch in node.children]
+        return f"{{ b: {node.memsize}, cnt: {node.cnt}, n: {node.name_index}, ch: {children}, p: {parent_index} }},"

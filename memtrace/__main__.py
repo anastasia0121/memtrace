@@ -54,6 +54,15 @@ def generate_mt_fname(pid):
 
     return mt_fname
 
+
+def report(mt_fname, tree):
+    report = Report(mt_fname)
+    if tree:
+        report.report_tree()
+    else:
+        report.report_txt()
+    report.report_flame()
+
 def main_func():
     if platform.uname()[4] != "x86_64":
         print("only x86_64 is supported")
@@ -104,7 +113,7 @@ def main_func():
     interactive = (not disable) and (not enable) and (not status)
     mt_fname = options.mt_fname
     tree = options.tree
-    
+
     if mt_fname and (pid or enable or disable or status or gdb):
         fail_program(0, "parse_args",
                      "file option cannot be set with other options together")
@@ -125,11 +134,7 @@ def main_func():
 
     # handel the exsisting mt file without tracing process
     if mt_fname:
-        report = Report(mt_fname)
-        if tree:
-            report.report_tree()
-        else:
-            report.report_txt()
+        report(mt_fname, tree)
         sys.exit(0)
 
     # if we kill tracer, we can kill child process
@@ -182,11 +187,6 @@ def main_func():
 
         print(f"mt file is {mt_fname}.")
 
-        report = Report(mt_fname)
-        if tree:
-            report.report_tree()
-        else:
-            report.report_txt()
-
+        report(mt_fname, tree)
 
 main_func()

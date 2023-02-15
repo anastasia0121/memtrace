@@ -156,6 +156,28 @@ class Statistics:
         self.freed_count += info.freed_count
 
 
+class TraceInfo:
+    def __init__(self):
+        self.usable_size = 0
+        self.now_in_mem = 0
+        self.all_allocated = 0
+        self.memory_peak = 0
+        self.ptr_overhead = 0
+        self.stack_overhead = 0
+
+    def to_html_text(self):
+        return (
+            "<div>"
+            f"Total in memory: {self.now_in_mem:,} B <br/>"
+            f"Full allocated amount: {self.all_allocated:,} B <br/>"
+            f"Memory peak: {self.memory_peak:,} B <br/>"
+            "Tracing overhead: <br/>"
+            f"Pointers: {self.ptr_overhead:,} B <br/>"
+            f"Stacks: {self.stack_overhead:,} B <br/>"
+            "</div>"
+        )
+
+
 class MTParser:
     """
     Data about all allocations/deallocations.
@@ -163,6 +185,7 @@ class MTParser:
     """
     def __init__(self):
         self.stats = Statistics()
+        self.trace_info = TraceInfo()
         self.duration = 0
         self.mapper = []
         self.stacks_info = []
@@ -206,12 +229,12 @@ class MTParser:
                         sys.exit("Libmetrace version is heigher than the client."
                                  "Please, update memtrace utility.")
 
-                    _usable_size = mt_file.read_byte()
-                    _now_in_mem = mt_file.read_int()
-                    _all_allocated = mt_file.read_int()
-                    _memory_peak = mt_file.read_int()
-                    _ptr_overhead = mt_file.read_int()
-                    _stack_overhead = mt_file.read_int()
+                    self.trace_info.usable_size = mt_file.read_byte()
+                    self.trace_info.now_in_mem = mt_file.read_int()
+                    self.trace_info.all_allocated = mt_file.read_int()
+                    self.trace_info.memory_peak = mt_file.read_int()
+                    self.trace_info.ptr_overhead = mt_file.read_int()
+                    self.trace_info.stack_overhead = mt_file.read_int()
 
                 elif record_type == b's':
                     # s, addr, v_addr, so_memsize, size of path, path
@@ -241,4 +264,3 @@ class MTParser:
 
         sorted_stacks_info = sorted(self.stacks_info, key=cmp_to_key(cmp_stacks))
         self.stacks_info = sorted_stacks_info
-

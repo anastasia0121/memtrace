@@ -6,33 +6,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <style>
     html, body { height: 100%; }
-    body { font: 16px "Helvetica Neue", sans-serif; margin: 0; }
-    body.hover { background: #cfc; }
-    h1 { font-size: 30px; margin: 30px 30px 15px; }
-    h1 a { color: black; text-decoration: none; }
-    h1 a:hover { text-decoration: underline; }
-    #fire-icon { fill: #f53; width: 26px; height: 26px; vertical-align: -1px; }
-    #intro { margin: 0 30px; }
-    code { font-size: 13px; color: #444; }
-    code span { color: #aaa; }
-    #canvas { width: 100%; font: 11px Courier New, sans-serif; }
-    #controls { display: none; }
-    #status { background: #aaa; font: 10px Tahoma, sans-serif; padding: 5px; color: #444; height: 10px; }
-    #search { margin-right: 10px; }
-    #include { margin-right: 10px; }
-    #highlight { position: absolute; pointer-events: none; background: #ffffff70; }
+    body { font: 16px "Courier New", sans-serif; margin: 0; }
+    #canvas { width: 100%; font: 11px Courier New, sans-serif; display: block; background: #f3f3f3; }
+    #controls { display: none; margin-bottom: 10px; }
+    #status { background: #aaa; font: 11px Courier New, sans-serif; padding: 5px; color: #444; height: 10px; }
+    #search, #include, #exclude, #reset {
+        margin-right: 0px; text-align: center; background: #f3f3f3; font: 12px Courier New, sans-serif;
+        padding: 3px;
+    }
+    #reset { padding-left: 30px; padding-right: 30px; }
+    #highlight { position: absolute; pointer-events: none; background: #ffffff60; }
     #ctxmenu { position: absolute; }
     #textarea { opacity: .01; }
-
     .hidden { display: none; }
     .ctxmenu { position: absolute; }
-    .ctxmenu-menu { padding: 1px; border: 1px solid #888; background: #fff; box-shadow: 2px 2px 3px #333; cursor: pointer; padding: 4px; }
+    .ctxmenu-menu {
+        padding: 1px; border: 1px solid #888; background: #fff;
+        box-shadow: 2px 2px 3px #333; cursor: pointer; padding: 4px;
+    }
     .ctxmenu-menu:hover { background: #eee; }
-
-    .loaded #intro { display: none; }
     .loaded #header { align-items: center; flex-flow: row wrap; padding: 7px 10px; }
-    .loaded h1 { font-size: 22px; margin: 0 auto 0 0; flex-shrink: 0; }
-    .loaded #fire-icon { width: 20px; height: 20px; }
     .loaded #controls { display: block; flex-shrink: 0; }
 </style>
 </head>
@@ -41,12 +34,15 @@
 <div id="highlight"></div>
 <div id="status"></div>
 <div id="header">
-    <h1>Date: Will be soon.</h1>
     <div id="controls">
-        <input id="include" placeholder="Include..." />
-        <input id="search" placeholder="Search..." />
+        <input id="include" placeholder="Include..."/>
+        <input id="exclude" placeholder="Exclude..."/>
+        <input id="search" placeholder="Search..."/>
         <button id="reset">Reset view</button>
     </div>
+    <div>
+    </div>
+    <!--EXTRA DATA-->
 </div>
 
 <div id="ctxmenu" class="hidden">
@@ -92,6 +88,7 @@ resetEl.onclick = () => {
     searchEl.value = query = '';
     window.location.hash = '';
     includeEl.value = select = '';
+    excludeEl.value = selectExclude = '';
     treeLevels = JSON.parse(JSON.stringify(backup));
     render();
 };
@@ -102,7 +99,7 @@ copystackEl.onclick = (e) => {
     let w = hoverNode.w;
     for (let h = hoverNode.h; h >= 0; --h) {
         let node = treeLevels[h][w];
-        w = node.parent;
+        w = node.p;
         text += (names[node.n] + "\n");
     }
     textareaEl.textContent = text;
@@ -118,11 +115,30 @@ searchEl.onchange = (e) => {
 
 const includeEl = document.getElementById('include');
 includeEl.onchange = (e) => {
+    rootNode = { w: 0, h: 0 };
     select = e.target.value;
     treeLevels = JSON.parse(JSON.stringify(backup));
     let level = treeLevels[0][0];
+    if (selectExclude) {
+        exclude(level, 0, false);
+    }
     if (select) {
-        exclude(level, 0);
+        include(level, 0);
+    }
+    render();
+};
+
+const excludeEl = document.getElementById('exclude');
+excludeEl.onchange = (e) => {
+    rootNode = { w: 0, h: 0 };
+    selectExclude = e.target.value;
+    treeLevels = JSON.parse(JSON.stringify(backup));
+    let level = treeLevels[0][0];
+    if (selectExclude) {
+        exclude(level, 0, false);
+    }
+    if (select) {
+        include(level, 0);
     }
     render();
 };
@@ -136,6 +152,7 @@ let hoverNode;
 let rootNode = { w: 0, h: 0 };
 let query = '';
 let select = '';
+let selectExclude = '';
 let graphWidth;
 let pxPerTick;
 let graphHeight;
@@ -188,7 +205,7 @@ function render() {
 
     ctx.textBaseline = 'middle';
     ctx.font = '11px Courier New, sans-serif';
-    ctx.strokeStyle = 'white';
+    ctx.strokeStyle = '#f3f3f3';
 
     if (baseLevel > 0) {
         let parentLevel = rootNode.h - 1
@@ -223,8 +240,8 @@ function draw(node, x, y, levelNum) {
 
 function drawNode(node, x, y, levelNum, forceBytes)
 {
-    const sw = node.b * pxPerTick;
-    const sh = pxPerLevel - 0.5;
+    let sw = node.b * pxPerTick;
+    let sh = pxPerLevel - 0.5;
 
     node.x = x;
     node.y = y - pxPerLevel
@@ -234,7 +251,7 @@ function drawNode(node, x, y, levelNum, forceBytes)
     ctx.beginPath();
     ctx.rect(node.x, node.y, node.w, node.h);
     ctx.stroke();
-    ctx.fillStyle = inQuery(node) ? '#A855FF' : color(node, levelNum);
+    ctx.fillStyle = inQuery(node) ? '#A855FF' : color(names[node.n]);
     ctx.fill();
 
     if (sw >= labelThreshold) {
@@ -249,12 +266,20 @@ function drawNode(node, x, y, levelNum, forceBytes)
     return sw;
 }
 
-function color(level, levelNum) {
-    const ratio = level.b / numTicks;
-    const intensity = Math.min(1, ratio * Math.pow(1.16, levelNum));
-    const h = 50 - 50 * intensity + 120;
-    const l = 65 + 7 * intensity - 25;
-    return `hsl(${h}, 90%, ${l}%)`;
+function color(name) {
+    let sum1 = 0; // hash
+    let sum2 = 0;
+    for (let i = 0; i < name.length; i++) {
+        sum1 += (i + 1) * name.codePointAt(i) / (1 << 8);
+        sum2 += (i + 3) * name.codePointAt(i) / (1 << 8);
+    }
+    const v1 = sum1 % 1; // Math.random();
+    const v2 = sum2 % 1;
+
+    const red = 0;
+    const green = 190 + Math.floor(50 * v1);
+    const blue = 0 + Math.floor(210 * v2);
+    return `rgb(${red}, ${green}, ${blue})`;
 }
 
 function xyToBar(x, y) {
@@ -276,25 +301,39 @@ function searchLevel(x, levelNum) {
     return -1;
 }
 
-function exclude(level, levelNum) {
-    if (names[level.n].indexOf(select) >= 0) {
-        return 0;
+function exclude(node, levelNum, forceExclude)
+{
+    if (forceExclude || (selectExclude && names[node.n].indexOf(selectExclude) >= 0)) {
+        forceExclude = true;
     }
 
-    const bytes = level.b;
+    let chExcludeBytes = 0;
+    let nextLevel = levelNum + 1;
+    for (let i = 0; i < node.ch.length; ++i) {
+        chExcludeBytes += exclude(treeLevels[nextLevel][node.ch[i]], nextLevel, forceExclude);
+    }
 
-    let ex = true;
-    for (let i = 0; i < level.ch.length; ++i) {
-        level.b -= exclude(treeLevels[levelNum + 1][level.ch[i]], levelNum + 1);
-        if (treeLevels[levelNum + 1][level.ch[i]].b != 0) {
-            ex = false;
-        }
+    const bytes = node.b;
+    node.b -= chExcludeBytes;
+    if (forceExclude) {
+        node.b = 0;
     }
-    if (ex) {
-        level.b = 0;
-        level.x = level.y = level.w = level.h = 0;
+    return bytes - node.b;
+}
+
+function include(node, levelNum) {
+    if (names[node.n].indexOf(select) >= 0) {
+        return node.b;
     }
-    return bytes - level.b;
+
+    let chIncludeBytes = 0;
+    let nextLevel = levelNum + 1;
+    for (let i = 0; i < node.ch.length; ++i) {
+        chIncludeBytes += include(treeLevels[nextLevel][node.ch[i]], nextLevel);
+    }
+
+    node.b = chIncludeBytes;
+    return node.b;
 }
 
 function inQuery(level) {
@@ -309,6 +348,10 @@ function removeHover() {
     canvas.style.cursor = '';
     highlightEl.style.display = 'none';
     statusLineEl.innerHTML = "";
+}
+
+function numberWithCommas(x) {
+    return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 function addHover(e) {
@@ -330,7 +373,8 @@ function addHover(e) {
     highlightEl.style.left = frame.x + 'px';
     highlightEl.style.top = (canvas.offsetTop + frame.y) + 'px';
     highlightEl.style.width = frame.w + 'px';
-    statusLineEl.innerHTML = `${names[frame.n]} (${frame.b}B in ${frame.cnt} allocations)`;
+    const bytes = numberWithCommas(frame.b);
+    statusLineEl.innerHTML = `${names[frame.n]} (${bytes} B in ${frame.cnt} allocations)`;
 }
 
 highlightEl.style.height = pxPerLevel + 'px';
@@ -364,8 +408,8 @@ var ctxmenu = {
 
     hoverNode = { w: j, h: i };
     ctxmenu.show({
-      posX: e.clientX,
-      posY: e.clientY
+      posX: e.offsetX,
+      posY: e.offsetY
     });
   });
 });

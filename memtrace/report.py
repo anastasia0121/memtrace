@@ -26,7 +26,10 @@ class Report:
         Make text report from mt file.
         """
         report = TxtReport(self.parser)
-        report.report()
+        txt_file = self.mt_file.with_suffix('.txt')
+        print(f"txt file is {txt_file}.")
+        with open(txt_file, "w") as txt_file:
+            txt_file.write(report.report())
 
     def report_tree(self):
         """
@@ -44,8 +47,13 @@ class Report:
         with open(template_name, "r") as template_file:
             contents = template_file.readlines()
 
+        tree_to_json = tree.tree_to_json()
         line_num = [num for num, line in enumerate(contents) if "HERE" in line][0]
-        contents.insert(line_num, tree.tree_to_json())
+        contents.insert(line_num, tree_to_json)
+
+        extra_data = self.parser.trace_info.to_html_text()
+        line_num = [num + 1 for num, line in enumerate(contents) if "EXTRA DATA" in line][0]
+        contents.insert(line_num, extra_data)
 
         flame = self.mt_file.with_suffix('.html')
         print(f"flame file is {flame}.")
@@ -70,19 +78,20 @@ class TxtReport:
         """
         memsize, cnt = stack_info.info.not_freed()
         if not memsize:
-            return
+            return ""
         avg = int(memsize / cnt)
-        print(f"Allocated {memsize} bytes in {cnt} allocations ({avg} bytes average)")
         output = symbolizer.symbolize(stack_info.stack, self.storage.mapper)
-        print(output)
+        return f"Allocated {memsize} bytes in {cnt} allocations ({avg} bytes average)\n{output}"
 
     def report(self):
         """
         Report all allocations.
         """
+        text = ""
         with contextlib.closing(Symbolizer()) as symbolizer:
             for stack_info in self.storage.stacks_info:
-                self.report_stack(symbolizer, stack_info)
+                text += self.report_stack(symbolizer, stack_info)
 
             memsize, cnt = self.storage.stats.not_freed()
-            print(f"Total: allocation {cnt} of total size {memsize}")
+            text += f"Total: allocation {cnt} of total size {memsize}"
+        return text

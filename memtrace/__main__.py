@@ -185,7 +185,7 @@ def main_func():
 
         tracer.detach()
 
-        print(f"mt file is {mt_fname}.")
+        print(f"mt file is {mt_fname}")
 
         report(mt_fname, tree)
 

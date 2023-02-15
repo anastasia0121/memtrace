@@ -27,7 +27,7 @@ class Report:
         """
         report = TxtReport(self.parser)
         txt_file = self.mt_file.with_suffix('.txt')
-        print(f"txt file is {txt_file}.")
+        print(f"txt file is {txt_file}")
         with open(txt_file, "w") as txt_file:
             txt_file.write(report.report())
 
@@ -37,7 +37,7 @@ class Report:
         """
         tree = graph.FrameTree(self.parser)
         txt_file = self.mt_file.with_suffix('.txt')
-        print(f"txt file is {txt_file}.")
+        print(f"txt file is {txt_file}")
         with open(txt_file, "w") as txt_file:
             rprint(tree.tree_to_rich(), file=txt_file)
 
@@ -56,7 +56,7 @@ class Report:
         contents.insert(line_num, extra_data)
 
         flame = self.mt_file.with_suffix('.html')
-        print(f"flame file is {flame}.")
+        print(f"flame file is {flame}")
         with open(flame, "w") as html_file:
             contents = "".join(contents)
             html_file.write(contents)

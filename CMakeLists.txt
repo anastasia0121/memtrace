@@ -20,7 +20,7 @@ file(GLOB SOURCES lib/src/*.cpp)
 add_library(${LIB} SHARED ${SOURCES})
 
 target_include_directories(${LIB} PRIVATE lib/src)
-target_link_libraries(${LIB} PRIVATE absl::flat_hash_map libunwind.a)
+target_link_libraries(${LIB} PRIVATE absl::flat_hash_map unwind)
 set_target_properties(${LIB} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${LIB_DIR})
 
 

@@ -6,6 +6,8 @@ import os
 import signal
 import sys
 
+from datetime import datetime
+
 from functools import cmp_to_key
 
 class MTFile:
@@ -164,13 +166,20 @@ class TraceInfo:
         self.memory_peak = 0
         self.ptr_overhead = 0
         self.stack_overhead = 0
+        self.start_time = 0
+        self.dump_time = 0
 
     def to_html_text(self):
+        start_time = datetime.utcfromtimestamp(float(self.start_time))
+        dump_time = datetime.utcfromtimestamp(float(self.dump_time))
+        duration = dump_time - start_time
         return (
             "<div>"
-            f"Total in memory: {self.now_in_mem:,} B <br/>"
             f"Full allocated amount: {self.all_allocated:,} B <br/>"
             f"Memory peak: {self.memory_peak:,} B <br/>"
+            f"Start time: {start_time} UTC <br/>"
+            f"Dump time: {dump_time} UTC <br/>"
+            f"Trace time: {duration} <br/>"
             "Tracing overhead: <br/>"
             f"Pointers: {self.ptr_overhead:,} B <br/>"
             f"Stacks: {self.stack_overhead:,} B <br/>"
@@ -233,6 +242,8 @@ class MTParser:
                     self.trace_info.now_in_mem = mt_file.read_int()
                     self.trace_info.all_allocated = mt_file.read_int()
                     self.trace_info.memory_peak = mt_file.read_int()
+                    self.trace_info.start_time = mt_file.read_int()
+                    self.trace_info.dump_time = mt_file.read_int()
                     self.trace_info.ptr_overhead = mt_file.read_int()
                     self.trace_info.stack_overhead = mt_file.read_int()
 

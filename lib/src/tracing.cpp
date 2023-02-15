@@ -238,6 +238,10 @@ void storage::dump(std::ostream &strm)
     dump_uint64_t(strm, m_statistics.get_all_allocations());
     dump_uint64_t(strm, m_statistics.get_memory_peak());
 
+    time_t dump_time = std::time(nullptr);
+    dump_uint64_t(strm, m_shared_data.start_time);
+    dump_uint64_t(strm, dump_time);
+
     uint64_t ptr_count = 0;
     for (uint64_t i = 0; i < m_pointers.size(); ++i) {
         std::unique_lock<std::mutex> lock(m_pointer_mutexes[i]);
@@ -279,14 +283,23 @@ void storage::dump(std::ostream &strm)
     }
 }
 
-void storage::enable_tracing(bool usable_size)
+const char *storage::enable_tracing(bool usable_size)
 {
+#define ERROR_STR(str) str "\0\0\0\0\0\0\0";
+    if (UNLIKELY(s_use_memory_tracing)) {
+        return ERROR_STR("Tracing has already enabled");
+    }
+#undef ERROR_STR
+
     s_use_memory_tracing = true;
     s_usable_size = usable_size;
 
     if (UNLIKELY(s_use_memory_tracing && !s_storage)) {
         s_storage = new storage();
     }
+    s_storage->m_shared_data.start_time = std::time(nullptr);
+
+    return nullptr;
 }
 
 struct File
@@ -407,7 +420,11 @@ const char *storage::disable_tracing()
 void *storage::get_shared_data()
 {
     if (s_storage) {
-        return reinterpret_cast<void *>(&s_storage->m_shared_data);
+        SharedData *sd = &(s_storage->m_shared_data);
+        sd->now_in_memory = s_storage->m_statistics.get_now_in_memory();
+        sd->all_allocations = s_storage->m_statistics.get_all_allocations();
+        sd->memory_peak = s_storage->m_statistics.get_memory_peak();
+        return reinterpret_cast<void *>(sd);
     }
     return nullptr;
 }
@@ -416,9 +433,9 @@ void *storage::get_shared_data()
 
 extern "C" {
 
-void enable_memory_tracing(bool usable_size)
+const void *enable_memory_tracing(bool usable_size)
 {
-    memtrace::storage::enable_tracing(usable_size);
+    return memtrace::storage::enable_tracing(usable_size);
 }
 
 const void *disable_memory_tracing()

@@ -256,7 +256,7 @@ private:
 struct storage
 {
 public:
-    static void enable_tracing(bool usable_size);
+    static const char *enable_tracing(bool usable_size);
 
     static const char *disable_tracing();
 
@@ -317,18 +317,24 @@ private:
     std::array<std::mutex, s_slicing_count> m_pointer_mutexes;
 
     statistics m_statistics;
-    
+
     // shared data between the libary and client
     static constexpr uint64_t s_shared_size = 1024;
     struct  __attribute__((__packed__)) SharedData
     {
         char data[s_shared_size] = {0};
         uint64_t start_time = 0;
+        uint64_t now_in_memory = 0;
+        uint64_t all_allocations = 0;
+        uint64_t memory_peak = 0;
 
         void clear()
         {
             std::memset(data, 0, s_shared_size);
             start_time = 0;
+            now_in_memory = 0;
+            all_allocations = 0;
+            memory_peak = 0;
         }
     };
     SharedData m_shared_data;
@@ -445,4 +451,3 @@ void storage::free_ptr(void *ptr)
 }
 
 }
-

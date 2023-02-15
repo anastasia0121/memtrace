@@ -19,7 +19,7 @@ If you want to build the memtrace tests, you have to pass `-DENABLE_TESTS=ON` wh
 3. launch memtrace client with required options.
 ```
 $ python3 -m memtrace --help
-usage: memtrace [-h] [-p PID] [-f FILE] [-g] [-e] [-d] [-s]
+usage: memtrace [-h] [-p PID] [-f FILE] [-g] [-e] [-d] [-s] [-t]
 
 memtrace is a tool to trace allocations in c++ applications.
 
@@ -36,6 +36,11 @@ Actions:
   -e, --enable          enable tracing
   -d, --disable         disable tracing
   -s, --status          current status of tracing
+
+Output:
+  Output options.
+
+  -t, --tree            out as tree
 ```
 
 # Results

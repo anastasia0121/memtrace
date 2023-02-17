@@ -6,26 +6,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <style>
     html, body { height: 100%; }
-    body { font: 16px "Courier New", sans-serif; margin: 0; }
-    #canvas { width: 100%; font: 11px Courier New, sans-serif; display: block; background: #f3f3f3; }
-    #controls { display: none; margin-bottom: 10px; }
-    #status { background: #aaa; font: 11px Courier New, sans-serif; padding: 5px; color: #444; height: 10px; }
-    #search, #include, #exclude, #reset {
-        margin-right: 0px; text-align: center; background: #f3f3f3; font: 12px Courier New, sans-serif;
-        padding: 3px;
+    body { margin: 0; font: 16px "Courier New", sans-serif; }
+    #canvas {
+        background: #f3f3f3; width: 100%; display: block;
+        font: 0.7em Courier New, sans-serif;
     }
-    #reset { padding-left: 30px; padding-right: 30px; }
+    #controls { display: none; margin-bottom: 0.7em; }
+    #status {
+        background: #aaa; padding: 0.1em;
+        color: #444; font: 0.7em Courier New, sans-serif;
+        overflow: hidden; max-height: 1.3em; line-height: 1.3em; height: 1.3em;
+    }
+    #search, #include, #exclude, #reset {
+        background: #f3f3f3; margin-right: 0em;
+        padding: 0.3em; width: 14em; box-sizing: border-box;
+        font: 0.7em Courier New, sans-serif; text-align: center;
+    }
+    input:focus{ outline: none; }
+    input:not(:placeholder-shown) { background: #c488fc !important; }
     #highlight { position: absolute; pointer-events: none; background: #ffffff60; }
     #ctxmenu { position: absolute; }
     #textarea { opacity: .01; }
     .hidden { display: none; }
     .ctxmenu { position: absolute; }
     .ctxmenu-menu {
-        padding: 1px; border: 1px solid #888; background: #fff;
-        box-shadow: 2px 2px 3px #333; cursor: pointer; padding: 4px;
+        background: #fff; border: 0.07em solid #888;
+        box-shadow: 0.17em 0.17em 0.17em #333; cursor: pointer; padding: 0.25em;
     }
     .ctxmenu-menu:hover { background: #eee; }
-    .loaded #header { align-items: center; flex-flow: row wrap; padding: 7px 10px; }
+    .loaded #header { align-items: center; flex-flow: row wrap; padding: 0.5em 0.7em; }
     .loaded #controls { display: block; flex-shrink: 0; }
 </style>
 </head>
@@ -251,7 +260,7 @@ function drawNode(node, x, y, levelNum, forceBytes)
     ctx.beginPath();
     ctx.rect(node.x, node.y, node.w, node.h);
     ctx.stroke();
-    ctx.fillStyle = inQuery(node) ? '#A855FF' : color(names[node.n]);
+    ctx.fillStyle = inQuery(node) ? '#c488fc' : color(names[node.n]);
     ctx.fill();
 
     if (sw >= labelThreshold) {
@@ -374,7 +383,12 @@ function addHover(e) {
     highlightEl.style.top = (canvas.offsetTop + frame.y) + 'px';
     highlightEl.style.width = frame.w + 'px';
     const bytes = numberWithCommas(frame.b);
-    statusLineEl.innerHTML = `${names[frame.n]} (${bytes} B in ${frame.cnt} allocations)`;
+    const statusText = `${bytes} B in ${frame.cnt} allocations, ${names[frame.n]}`;
+    statusLineEl.innerHTML = sanitizeHTML(statusText);
+}
+
+function sanitizeHTML(str) {
+    return str.replace(/[^\w. ]/gi, function (c) { return '&#' + c.charCodeAt(0) + ';'; });
 }
 
 highlightEl.style.height = pxPerLevel + 'px';

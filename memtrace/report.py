@@ -51,7 +51,8 @@ class Report:
         line_num = [num for num, line in enumerate(contents) if "HERE" in line][0]
         contents.insert(line_num, tree_to_json)
 
-        extra_data = self.parser.trace_info.to_html_text()
+        tracing_info_str = self.parser.trace_info.to_text(end="<br/>")
+        extra_data = f"<div>{tracing_info_str}</div>"
         line_num = [num + 1 for num, line in enumerate(contents) if "EXTRA DATA" in line][0]
         contents.insert(line_num, extra_data)
 
@@ -66,8 +67,8 @@ class TxtReport:
     """
     Make text report from mt file.
     """
-    def __init__(self, storage):
-        self.storage = storage
+    def __init__(self, parser):
+        self.parser = parser
 
     def report_stack(self, symbolizer, stack_info):
         """
@@ -80,8 +81,8 @@ class TxtReport:
         if not memsize:
             return ""
         avg = int(memsize / cnt)
-        output = symbolizer.symbolize(stack_info.stack, self.storage.mapper)
-        return f"Allocated {memsize} bytes in {cnt} allocations ({avg} bytes average)\n{output}"
+        output = symbolizer.symbolize(stack_info.stack, self.parser.mapper)
+        return f"Allocated {memsize} bytes in {cnt} allocations ({avg} bytes average)\n{output}\n"
 
     def report(self):
         """
@@ -89,9 +90,11 @@ class TxtReport:
         """
         text = ""
         with contextlib.closing(Symbolizer()) as symbolizer:
-            for stack_info in self.storage.stacks_info:
+            for stack_info in self.parser.stacks_info:
                 text += self.report_stack(symbolizer, stack_info)
 
-            memsize, cnt = self.storage.stats.not_freed()
-            text += f"Total: allocation {cnt} of total size {memsize}"
+            memsize, cnt = self.parser.stats.not_freed()
+            text += f"Total: allocation {cnt} of total size {memsize}\n"
+            text += self.parser.trace_info.to_text()
+
         return text

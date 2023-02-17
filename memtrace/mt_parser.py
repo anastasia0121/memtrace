@@ -169,21 +169,19 @@ class TraceInfo:
         self.start_time = 0
         self.dump_time = 0
 
-    def to_html_text(self):
+    def to_text(self, end="\n"):
         start_time = datetime.utcfromtimestamp(float(self.start_time))
         dump_time = datetime.utcfromtimestamp(float(self.dump_time))
         duration = dump_time - start_time
         return (
-            "<div>"
-            f"Full allocated amount: {self.all_allocated:,} B <br/>"
-            f"Memory peak: {self.memory_peak:,} B <br/>"
-            f"Start time: {start_time} UTC <br/>"
-            f"Dump time: {dump_time} UTC <br/>"
-            f"Trace time: {duration} <br/>"
-            "Tracing overhead: <br/>"
-            f"Pointers: {self.ptr_overhead:,} B <br/>"
-            f"Stacks: {self.stack_overhead:,} B <br/>"
-            "</div>"
+            f"Full allocated amount (ignore free): {self.all_allocated:,} B {end}"
+            f"Memory peak: {self.memory_peak:,} B {end}"
+            f"Start time: {start_time} UTC {end}"
+            f"Dump time: {dump_time} UTC {end}"
+            f"Trace time: {duration} {end}"
+            f"Tracing overhead: {end}"
+            f"Pointers: {self.ptr_overhead:,} B {end}"
+            f"Stacks: {self.stack_overhead:,} B {end}"
         )
 
 

@@ -419,7 +419,7 @@ const char *storage::disable_tracing()
 
 void *storage::get_shared_data()
 {
-    if (s_storage) {
+    if (s_use_memory_tracing && s_storage) {
         SharedData *sd = &(s_storage->m_shared_data);
         sd->now_in_memory = s_storage->m_statistics.get_now_in_memory();
         sd->all_allocations = s_storage->m_statistics.get_all_allocations();

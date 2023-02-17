@@ -164,7 +164,19 @@ def main_func():
         if not ret:
             print(f"Tracing for {pid} is disabled.")
         else:
-            print(f"Tracing for {pid} is enabled.")
+            addr = ret + 1024  # hardcoded in lib cpp
+            start_time_word = tracer.read_word(addr)
+            start_time = datetime.utcfromtimestamp(float(start_time_word))
+            now_in_memory = tracer.read_word(addr)
+            all_allocations = tracer.read_word(addr)
+            memory_peak = tracer.read_word(addr)
+            print(
+                f"\nTracing for {pid} is enabled.\n"
+                f"Start time: {start_time}\n"
+                f"Now in memory: {now_in_memory:,} B\n"
+                f"Allocated: {all_allocations:,} B\n"
+                f"Memory peak: {memory_peak:,} B\n"
+            )
         tracer.detach()
 
     # inject disable

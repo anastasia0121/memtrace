@@ -54,7 +54,8 @@ def main_func():
                         dest="mt_fname", action="store", metavar="FILE",
                         help="existing mt file")
     parser.add_argument("-g", "--gdb",
-                        dest="gdb", action="store_true",
+                        dest="gdb", action=argparse.BooleanOptionalAction,
+                        default=True,
                         help="use gdb instead of manual ptrace calls")
 
     actions_group = parser.add_argument_group(

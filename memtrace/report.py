@@ -6,7 +6,6 @@ import os
 import signal
 import sys
 from pathlib import Path
-from rich import print as rprint
 
 from mt_parser import MTParser
 from symbolizer import Symbolizer
@@ -35,6 +34,7 @@ class Report:
         """
         Make graph report from mt file.
         """
+        from rich import print as rprint
         tree = graph.FrameTree(self.parser)
         txt_file = self.mt_file.with_suffix('.txt')
         print(f"txt file is {txt_file}")

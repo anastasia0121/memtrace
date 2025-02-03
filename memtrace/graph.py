@@ -7,7 +7,6 @@ import signal
 import sys
 
 from pathlib import Path
-from rich.tree import Tree
 
 from mt_parser import MTParser
 from symbolizer import Symbolizer
@@ -72,6 +71,7 @@ class FrameTree:
             level += 1
 
     def tree_to_rich(self):
+        from rich.tree import Tree
         rich_tree = Tree(f":deciduous_tree: Memory tree:", guide_style="bold bright_blue")
         self.node_to_rich(rich_tree, self.tree[0][0])
         return rich_tree

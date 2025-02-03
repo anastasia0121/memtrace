@@ -15,7 +15,7 @@ class Symbolizer:
     """
     def __init__(self, prefix="\t"):
         self.prefix = prefix
-        self.symbolizer = Popen("llvm-symbolizer",
+        self.symbolizer = Popen("/usr/bin/llvm-symbolizer-17",
                                 stdin=PIPE, stdout=PIPE, stderr=PIPE,
                                 universal_newlines=True, bufsize=1)
 

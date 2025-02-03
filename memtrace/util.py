@@ -5,8 +5,6 @@ import ctypes
 import os
 import sys
 
-from elftools.elf.elffile import ELFFile
-
 
 def fail_program(pid, action, error=""):
     """
@@ -54,6 +52,7 @@ def find_function_addr(func_name, libs):
     :libs: list of code segments of libraries.
     :return: function address
     """
+    from elftools.elf.elffile import ELFFile
     for lib in libs:
         with open(lib["name"], "rb") as libfile:
             elffile = ELFFile(libfile)

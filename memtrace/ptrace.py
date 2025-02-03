@@ -8,7 +8,7 @@ import mmap
 import os
 import signal
 
-from util import fail_program
+from util import fail_program, find_libs_segments, find_function_or_fail
 
 PTRACE_PEEKTEXT = 1
 PTRACE_PEEKDATA = 2
@@ -237,6 +237,31 @@ class Siginfo(ctypes.Union):
     ]
 
 
+def find_tracing_functions(pid):
+    """
+    Check if libmemtrace is loaded
+    in a process with pid.
+    Find enable_memory_tracing(),
+         disable_memory_tracing(),
+         get_tracing_shared_data()
+    in the library.
+    Return adresses of functions.
+    """
+    # check if tracing libary is loaded
+    lib_name = "libmemtrace.so"
+    libs = find_libs_segments(pid, lib_name)
+    if not libs:
+        fail_program(pid, "find_lib_segment",
+                     f"{lib_name} is not loaded.")
+
+    # find required function
+    enable_addr = find_function_or_fail(pid, "enable_memory_tracing", libs)
+    disable_addr = find_function_or_fail(pid, "disable_memory_tracing", libs)
+    get_data_addr = find_function_or_fail(pid, "get_tracing_shared_data", libs)
+
+    return enable_addr, disable_addr, get_data_addr
+
+
 class PtraceTracer:
     def __init__(self, pid):
         self.pid = pid
@@ -244,6 +269,32 @@ class PtraceTracer:
         self.libc = self.setup_ptrace_call()
         self.reg_cache = RegCache(self.pid, self.libc)
         self.used_memory = []
+
+        self.enable_addr, self.disable_addr, self.get_shared_data_addr = find_tracing_functions(pid)
+
+    def enable(self):
+        self.attach()
+        self.call_function(self.enable_addr, 0)
+        self.detach()
+
+    def get_shared_data_addr(self):
+        self.attach()
+        return self.call_function(self.get_shared_data_addr)
+    
+    def disable(self, mt_fname):
+        self.attach()
+        mt_fname_addr = self.call_function(self.get_shared_data_addr, 0)
+        if not mt_fname_addr:
+            fail_program(self.pid, "disable_memory_tracing", "return address is empty.")
+        self.write_string(mt_fname_addr, str(mt_fname))
+
+        ret = self.call_function(self.disable_addr)
+        if 0 != ret:
+            error = self.read_string(ret)
+            if error:
+                fail_program(self.pid, "disable_memory_tracing", error)
+
+        self.detach()
 
     def setup_ptrace_call(self):
         """

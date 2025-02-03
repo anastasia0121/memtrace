@@ -3,14 +3,18 @@ cmake_minimum_required(VERSION 3.10.2)
 project(memory_tracing
         DESCRIPTION "tracing library")
 
-set(CMAKE_CXX_FLAGS "-fno-omit-frame-pointer -fPIC -Wall -Wextra -Wshadow \
-                     -Wpointer-arith -m64")
-
+set(CMAKE_CXX_FLAGS "-fno-omit-frame-pointer -fPIC -Wall -Wextra -Wshadow -Wpointer-arith -m64")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEB -march=native -mtune=native")
 set(CMAKE_CXX_FLAGS_DEBUG "-DDEBUG -g")
 
 set(CMAKE_CXX_STANDARD 17)
 
+option(ENABLE_TESTS "Enable tests" OFF)
+
+# dependencies
+set(ABSL_PROPAGATE_CXX_STD ON)
+add_subdirectory(thd/abseil-cpp)
+add_subdirectory(thd/googletest)
 
 # libmemtrace
 set(LIB memtrace)
@@ -23,9 +27,7 @@ target_include_directories(${LIB} PRIVATE lib/src)
 target_link_libraries(${LIB} PRIVATE absl::flat_hash_map unwind)
 set_target_properties(${LIB} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${LIB_DIR})
 
-
 # tests
-option(ENABLE_TESTS "Enable tests" OFF)
 if (${ENABLE_TESTS})
   enable_testing()
 
@@ -43,11 +45,5 @@ if (${ENABLE_TESTS})
 
   add_custom_command(TARGET ${TEST_EXE} POST_BUILD
     COMMAND ctest --output-on-failure)
-
 endif()
 
-
-# dependencies
-set(ABSL_PROPAGATE_CXX_STD ON)
-add_subdirectory(thd/abseil-cpp)
-add_subdirectory(thd/googletest)

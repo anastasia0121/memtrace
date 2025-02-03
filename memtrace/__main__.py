@@ -12,36 +12,11 @@ from pathlib import Path
 from gdb_tracer import GDBTracer
 from report import Report
 from ptrace import PtraceTracer
-from util import fail_program, find_libs_segments, find_function_or_fail
+from util import fail_program
 
 
 def signal_handler(_sig, _frame):
     print("You pressed Ctrl+C.")
-
-
-def find_tracing_functions(pid):
-    """
-    Check if libmemtrace is loaded
-    in a process with pid.
-    Find enable_memory_tracing(),
-         disable_memory_tracing(),
-         get_tracing_shared_data()
-    in the library.
-    Return adresses of functions.
-    """
-    # check if tracing libary is loaded
-    lib_name = "libmemtrace.so"
-    libs = find_libs_segments(pid, lib_name)
-    if not libs:
-        fail_program(pid, "find_lib_segment",
-                     f"{lib_name} is not loaded.")
-
-    # find required function
-    enable_addr = find_function_or_fail(pid, "enable_memory_tracing", libs)
-    disable_addr = find_function_or_fail(pid, "disable_memory_tracing", libs)
-    get_data_addr = find_function_or_fail(pid, "get_tracing_shared_data", libs)
-
-    return enable_addr, disable_addr, get_data_addr
 
 
 def generate_mt_fname(pid):
@@ -62,6 +37,7 @@ def report(mt_fname, tree):
     else:
         report.report_txt()
     report.report_flame()
+
 
 def main_func():
     if platform.uname()[4] != "x86_64":
@@ -114,6 +90,7 @@ def main_func():
     mt_fname = options.mt_fname
     tree = options.tree
 
+
     if mt_fname and (pid or enable or disable or status or gdb):
         fail_program(0, "parse_args",
                      "file option cannot be set with other options together")
@@ -142,14 +119,11 @@ def main_func():
 
     print("Connection to process. Please wait.")
 
-    enable_addr, disable_addr, get_shared_data_addr = find_tracing_functions(pid)
     tracer = GDBTracer(pid) if gdb else PtraceTracer(pid)
 
     # inject enable
     if (enable or interactive):
-        tracer.attach()
-        tracer.call_function(enable_addr, 0)
-        tracer.detach()
+        tracer.enable()
 
     # wait some time
     if interactive:
@@ -159,8 +133,7 @@ def main_func():
 
     # tracing status
     if status:
-        tracer.attach()
-        ret = tracer.call_function(get_shared_data_addr)
+        ret = tracer.get_shared_data_addr()
         if not ret:
             print(f"Tracing for {pid} is disabled.")
         else:
@@ -181,21 +154,13 @@ def main_func():
 
     # inject disable
     if interactive or disable:
-        tracer.attach()
-
         mt_fname = generate_mt_fname(pid)
-        mt_fname_addr = tracer.call_function(get_shared_data_addr, 0)
-        if not mt_fname_addr:
-            fail_program(pid, "disable_memory_tracing", "return address is empty.")
-        tracer.write_string(mt_fname_addr, str(mt_fname))
+        tracer.disable(mt_fname)
 
-        ret = tracer.call_function(disable_addr)
-        if 0 != ret:
-            error = tracer.read_string(ret)
-            if error:
-                fail_program(pid, "disable_memory_tracing", error)
-
-        tracer.detach()
+        mt_exist = Path(mt_fname)
+        if not mt_exist.is_file():
+            print("Mt file does not exist")
+            return
 
         print(f"mt file is {mt_fname}")
 

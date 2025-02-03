@@ -429,6 +429,20 @@ void *storage::get_shared_data()
     return nullptr;
 }
 
+const char *storage::set_tracing_file(const char *file_name)
+{
+#define ERROR_STR(str) str "\0\0\0\0\0\0\0";
+    if (!s_use_memory_tracing || !s_storage) {
+        return ERROR_STR("tracing is not enabled");
+    }
+#undef ERROR_STR
+    SharedData *sd = &(s_storage->m_shared_data);
+    std::memset(sd->data, 0, s_shared_size);
+    uint64_t len = std::strlen(file_name);
+    std::memcpy(sd->data, file_name, std::min(s_shared_size - 1, len));
+    return nullptr;
+}
+
 }
 
 extern "C" {
@@ -446,6 +460,11 @@ const void *disable_memory_tracing()
 void *get_tracing_shared_data()
 {
     return memtrace::storage::get_shared_data();
+}
+
+const void *set_memory_tracing_file(const char *file_name)
+{
+    return memtrace::storage::set_tracing_file(file_name);
 }
 
 }

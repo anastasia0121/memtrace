@@ -262,6 +262,8 @@ public:
 
     static void *get_shared_data();
 
+    static const char *set_tracing_file(const char *file_name);
+
 public:
     static __attribute__((always_inline)) inline
     void alloc_ptr(void *old_ptr, size_t size, void *new_ptr);

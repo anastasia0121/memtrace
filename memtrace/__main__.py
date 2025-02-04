@@ -30,8 +30,8 @@ def generate_mt_fname(pid):
     return mt_fname
 
 
-def report(mt_fname, tree):
-    report = Report(mt_fname)
+def report(mt_fname, tree, all):
+    report = Report(mt_fname, all)
     if tree:
         report.report_tree()
     else:
@@ -50,6 +50,10 @@ def main_func():
     parser.add_argument("-p", "--pid",
                         dest="pid", action="store", type=int,
                         help="process identifier")
+    parser.add_argument("-a", "--all",
+                        dest="all", action=argparse.BooleanOptionalAction,
+                        default=False,
+                        help="Show all allocations without free")
     parser.add_argument("-f", "--file",
                         dest="mt_fname", action="store", metavar="FILE",
                         help="existing mt file")
@@ -83,6 +87,7 @@ def main_func():
     options = parser.parse_args()
 
     pid = options.pid
+    all = options.all
     gdb = options.gdb
     enable = options.enable
     disable = options.disable
@@ -92,7 +97,7 @@ def main_func():
     tree = options.tree
 
 
-    if mt_fname and (pid or enable or disable or status or gdb):
+    if mt_fname and (pid or enable or disable or status):
         fail_program(0, "parse_args",
                      "file option cannot be set with other options together")
 
@@ -112,7 +117,7 @@ def main_func():
 
     # handel the exsisting mt file without tracing process
     if mt_fname:
-        report(mt_fname, tree)
+        report(mt_fname, tree, all)
         sys.exit(0)
 
     # if we kill tracer, we can kill child process
@@ -165,6 +170,6 @@ def main_func():
 
         print(f"mt file is {mt_fname}")
 
-        report(mt_fname, tree)
+        report(mt_fname, tree, all)
 
 main_func()

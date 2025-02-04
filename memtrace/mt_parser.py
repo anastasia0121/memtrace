@@ -98,7 +98,7 @@ class AllocationPoint:
     """
     Information about a code point where malloc() was called.
     """
-    def __init__(self, allocated, allocated_count, freed, freed_count, stack):
+    def __init__(self, all, allocated, allocated_count, freed, freed_count, stack):
         """
         :allocated: size of all allocations
         :allocated_count: number of allocations
@@ -106,7 +106,7 @@ class AllocationPoint:
         :freed_count: number of deallocations
         :stack: code point
         """
-        self.info = Statistics(allocated, allocated_count, freed, freed_count)
+        self.info = Statistics(all, allocated, allocated_count, freed, freed_count)
         self.stack = stack
 
 
@@ -134,7 +134,8 @@ class Statistics:
     """
     Statistics about allocation(s)/deallocation(s)
     """
-    def __init__(self, allocated=0, allocated_count=0, freed=0, freed_count=0):
+    def __init__(self, all, allocated=0, allocated_count=0, freed=0, freed_count=0):
+        self.all = all
         self.allocated = allocated
         self.allocated_count = allocated_count
         self.freed = freed
@@ -144,6 +145,8 @@ class Statistics:
         """
         :return: allocated but not freed memory and memory count.
         """
+        if self.all:
+            return self.allocated, self.allocated_count
         memsize = self.allocated - self.freed
         cnt = self.allocated_count - self.freed_count
         return memsize, cnt
@@ -190,8 +193,9 @@ class MTParser:
     Data about all allocations/deallocations.
     Data about all loaded libraries.
     """
-    def __init__(self):
-        self.stats = Statistics()
+    def __init__(self, all):
+        self.all = all
+        self.stats = Statistics(all)
         self.trace_info = TraceInfo()
         self.duration = 0
         self.mapper = []
@@ -210,7 +214,7 @@ class MTParser:
         Add information code point and
         all allocations/deallocations in the point.
         """
-        alloc_info = AllocationPoint(allocated, allocated_count,
+        alloc_info = AllocationPoint(self.all, allocated, allocated_count,
                                      freed, freed_count,
                                      stack)
         self.stats.add_info(alloc_info.info)

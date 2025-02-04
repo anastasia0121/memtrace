@@ -15,10 +15,11 @@ class Report:
     """
     Make reports from mt file.
     """
-    def __init__(self, mt_fname):
-        self.parser = MTParser()
+    def __init__(self, mt_fname, all):
+        self.parser = MTParser(all)
         self.parser.parse(mt_fname)
         self.mt_file = Path(mt_fname)
+        self.all = all
 
     def report_txt(self):
         """

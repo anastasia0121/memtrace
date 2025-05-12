@@ -310,11 +310,11 @@ private:
 
     uint64_t m_version = 1;
 
-    using allocation_map_t = absl::flat_hash_map<stack_view, stack_info *>;
+    using allocation_map_t = absl::flat_hash_map<stack_view, stack_info *, std::hash<stack_view>>;
     std::array<allocation_map_t, s_slicing_count> m_storage;
     std::array<std::shared_mutex, s_slicing_count> m_mutexes;
 
-    using pointer_map_t = absl::flat_hash_map<void *, pointer_info>;
+    using pointer_map_t = absl::flat_hash_map<void *, pointer_info, std::hash<void *>>;
     std::array<pointer_map_t, s_slicing_count> m_pointers;
     std::array<std::mutex, s_slicing_count> m_pointer_mutexes;
 

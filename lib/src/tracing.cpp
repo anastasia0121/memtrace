@@ -121,9 +121,9 @@ void storage::alloc_ptr_i(void *ptr, stack_view &sv, size_t size)
 
     auto &map = m_storage[map_number];
     {
-        uint64_t hash = sv.get_hash_value();
+        // uint64_t hash = sv.get_hash_value();
         std::shared_lock<std::shared_mutex> lock(m_mutexes[map_number]);
-        auto it = map.find(sv, hash);
+        auto it = map.find(sv);
         if (map.end() != it) {
             info = it->second;
         }

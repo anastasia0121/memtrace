@@ -11,7 +11,6 @@ from pathlib import Path
 
 from gdb_tracer import GDBTracer
 from report import Report
-from ptrace import PtraceTracer
 from util import fail_program
 
 
@@ -30,8 +29,8 @@ def generate_mt_fname(pid):
     return mt_fname
 
 
-def report(mt_fname, tree, all):
-    report = Report(mt_fname, all)
+def report(mt_fname, tree, all, symbolizer):
+    report = Report(mt_fname, all, symbolizer)
     if tree:
         report.report_tree()
     else:
@@ -60,7 +59,15 @@ def main_func():
     parser.add_argument("-g", "--gdb",
                         dest="gdb", action=argparse.BooleanOptionalAction,
                         default=True,
-                        help="use gdb instead of manual ptrace calls")
+                        help="use gdb, always True, experimental flag")
+    parser.add_argument("-u", "--libunwind",
+                        dest="unw", action=argparse.BooleanOptionalAction,
+                        default=True,
+                        help="Use libunwind")
+    parser.add_argument("-s", "--symbolizer",
+                        dest="symbolizer", action="store",
+                        default="/usr/bin/llvm-symbolizer-17",
+                        help="path to llvm symbolizer")
 
     actions_group = parser.add_argument_group(
         "Actions",
@@ -73,16 +80,13 @@ def main_func():
     actions_group.add_argument("-d", "--disable",
                                dest="disable", action="store_true",
                                help="disable tracing")
-    actions_group.add_argument("-s", "--status",
-                               dest="status", action="store_true",
-                               help="current status of tracing")
 
     actions_group = parser.add_argument_group(
         "Output",
         "Output options.")
     actions_group.add_argument("-t", "--tree",
                                dest="tree", action="store_true",
-                               help="out as tree")
+                               help="out as tree, required rich")
 
     options = parser.parse_args()
 
@@ -91,13 +95,12 @@ def main_func():
     gdb = options.gdb
     enable = options.enable
     disable = options.disable
-    status = options.status
-    interactive = (not disable) and (not enable) and (not status)
+    interactive = (not disable) and (not enable)
     mt_fname = options.mt_fname
     tree = options.tree
 
 
-    if mt_fname and (pid or enable or disable or status):
+    if mt_fname and (pid or enable or disable):
         fail_program(0, "parse_args",
                      "file option cannot be set with other options together")
 
@@ -107,7 +110,7 @@ def main_func():
     if tree and (not interactive) and (not disable) and (not mt_fname):
         fail_program(pid, "parse_args", "Tree option with not output launch.")
 
-    if (enable and disable) or (disable and status) or (enable and status):
+    if enable and disable:
         fail_program(pid, "parse_args",
                      "More than one actions (enable/disable/stats) are specified.")
 
@@ -117,7 +120,7 @@ def main_func():
 
     # handel the exsisting mt file without tracing process
     if mt_fname:
-        report(mt_fname, tree, all)
+        report(mt_fname, tree, all, options.symbolizer)
         sys.exit(0)
 
     # if we kill tracer, we can kill child process
@@ -125,10 +128,10 @@ def main_func():
 
     print("Connection to process. Please wait.")
 
-    tracer = GDBTracer(pid) if gdb else PtraceTracer(pid)
+    tracer = GDBTracer(pid)
 
     # inject enable
-    if (enable or interactive):
+    if enable or interactive:
         tracer.enable()
 
     # wait some time
@@ -136,27 +139,6 @@ def main_func():
         print("Tracing is enabled.")
         print("Press Ctrl+C to stop tracing.")
         signal.pause()
-
-    # tracing status
-    if status:
-        ret = tracer.get_shared_data_addr()
-        if not ret:
-            print(f"Tracing for {pid} is disabled.")
-        else:
-            addr = ret + 1024  # hardcoded in lib cpp
-            start_time_word = tracer.read_word(addr)
-            start_time = datetime.utcfromtimestamp(float(start_time_word))
-            now_in_memory = tracer.read_word(addr)
-            all_allocations = tracer.read_word(addr)
-            memory_peak = tracer.read_word(addr)
-            print(
-                f"\nTracing for {pid} is enabled.\n"
-                f"Start time: {start_time}\n"
-                f"Now in memory: {now_in_memory:,} B\n"
-                f"Allocated: {all_allocations:,} B\n"
-                f"Memory peak: {memory_peak:,} B\n"
-            )
-        tracer.detach()
 
     # inject disable
     if interactive or disable:

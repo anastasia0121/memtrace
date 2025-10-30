@@ -94,22 +94,6 @@ def cmp_stacks(a, b):
     return -1 if b.info.allocated < a.info.allocated else 1
 
 
-class AllocationPoint:
-    """
-    Information about a code point where malloc() was called.
-    """
-    def __init__(self, all, allocated, allocated_count, freed, freed_count, stack):
-        """
-        :allocated: size of all allocations
-        :allocated_count: number of allocations
-        :freed: size of all deallocations
-        :freed_count: number of deallocations
-        :stack: code point
-        """
-        self.info = Statistics(all, allocated, allocated_count, freed, freed_count)
-        self.stack = stack
-
-
 class SharedLibrary:
     """
     Shared library description.
@@ -130,6 +114,22 @@ class SharedLibrary:
         return (addr > self.begin) and (addr < self.end)
 
 
+class AllocationPoint:
+    """
+    Information about a code point where malloc() was called.
+    """
+    def __init__(self, all, allocated, allocated_count, freed, freed_count, stack):
+        """
+        :allocated: size of all allocations
+        :allocated_count: number of allocations
+        :freed: size of all deallocations
+        :freed_count: number of deallocations
+        :stack: code point
+        """
+        self.info = Statistics(all, allocated, allocated_count, freed, freed_count)
+        self.stack = stack
+
+
 class Statistics:
     """
     Statistics about allocation(s)/deallocation(s)
@@ -140,6 +140,8 @@ class Statistics:
         self.allocated_count = allocated_count
         self.freed = freed
         self.freed_count = freed_count
+        self.free_no_alloc = 0
+        self.free_no_alloc_count = 0
 
     def not_freed(self):
         """
@@ -160,6 +162,13 @@ class Statistics:
         self.freed += info.freed
         self.freed_count += info.freed_count
 
+    def add_free_no_alloc(self, info):
+        self.free_no_alloc += info.allocated
+        self.free_no_alloc_count += info.allocated_count
+
+    def freed_no_alloc(self):
+        return self.free_no_alloc, self.free_no_alloc_count
+
 
 class TraceInfo:
     def __init__(self):
@@ -167,6 +176,7 @@ class TraceInfo:
         self.now_in_mem = 0
         self.all_allocated = 0
         self.memory_peak = 0
+        self.free_no_alloc = 0
         self.ptr_overhead = 0
         self.stack_overhead = 0
         self.start_time = 0
@@ -179,6 +189,7 @@ class TraceInfo:
         return (
             f"Full allocated amount (ignore free): {self.all_allocated:,} B {end}"
             f"Memory peak: {self.memory_peak:,} B {end}"
+            f"Free no alloc: {self.free_no_alloc:,} B {end}"
             f"Start time: {start_time} UTC {end}"
             f"Dump time: {dump_time} UTC {end}"
             f"Trace time: {duration} {end}"
@@ -200,7 +211,8 @@ class MTParser:
         self.duration = 0
         self.mapper = []
         self.stacks_info = []
-        self.version = 1
+        self.free_info = []
+        self.version = 2
 
     def add_lib_info(self, mapped_addr, v_addr, memsize, path):
         """
@@ -220,6 +232,16 @@ class MTParser:
         self.stats.add_info(alloc_info.info)
         self.stacks_info.append(alloc_info)
 
+    def add_free_info(self, freed, freed_count, stack):
+        """
+        Free information code point and
+        all deallocations in the point.
+        """
+        # add allocation, easy to calculate
+        alloc_info = AllocationPoint(self.all, freed, freed_count, 0, 0, stack)
+        self.stats.add_free_no_alloc(alloc_info.info)
+        self.free_info.append(alloc_info)
+
     def parse(self, fname):
         """
         Load data from file.
@@ -236,7 +258,7 @@ class MTParser:
                 if record_type == b'v':
                     # read common information: v, version
                     version = mt_file.read_int()
-                    if version > self.version:
+                    if version != self.version:
                         sys.exit("Libmetrace version is heigher than the client."
                                  "Please, update memtrace utility.")
 
@@ -244,6 +266,7 @@ class MTParser:
                     self.trace_info.now_in_mem = mt_file.read_int()
                     self.trace_info.all_allocated = mt_file.read_int()
                     self.trace_info.memory_peak = mt_file.read_int()
+                    self.trace_info.free_no_alloc = mt_file.read_int()
                     self.trace_info.start_time = mt_file.read_int()
                     self.trace_info.dump_time = mt_file.read_int()
                     self.trace_info.ptr_overhead = mt_file.read_int()
@@ -271,9 +294,22 @@ class MTParser:
                     if stack:
                         self.add_alloc_info(allocated, allocated_count,
                                             freed, freed_count, stack)
+                elif record_type == b'f':
+                    # f, aggregated info
+                    # (freed, freed counter),
+                    # size of stack, stack
+
+                    freed = mt_file.read_int()
+                    freed_count = mt_file.read_int()
+                    stack = mt_file.read_stack_of_fail()
+                    if stack:
+                        self.add_free_info(freed, freed_count, stack)
 
                 else:
                     sys.exit("Cannot recognize record type")
 
         sorted_stacks_info = sorted(self.stacks_info, key=cmp_to_key(cmp_stacks))
         self.stacks_info = sorted_stacks_info
+
+        sorted_free_info = sorted(self.free_info, key=cmp_to_key(cmp_stacks))
+        self.free_info = sorted_free_info

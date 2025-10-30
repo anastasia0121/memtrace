@@ -32,18 +32,19 @@ class MemFrame:
 
 
 class FrameTree:
-    def __init__(self, storage, max_length=128):
-        self.storage = storage
+    def __init__(self, stats, stacks_info, mapper, symbolizer_path, max_length=129):
+        self.stacks_info = stacks_info
+        self.mapper = mapper
         self.tree = [[] for _ in range(max_length)]
         self.names = []
-        self.append_frame(" root", 0, self.storage.stats)
+        self.append_frame(" root", 0, stats)
 
-        with contextlib.closing(Symbolizer(prefix=" ")) as symbolizer:
+        with contextlib.closing(Symbolizer(symbolizer_path, prefix=" ")) as symbolizer:
             root = self.tree[0][0]
-            for info in self.storage.stacks_info:
+            for info in self.stacks_info:
                 memsize, _cnt = info.info.not_freed()
                 if memsize:
-                    stack_str = symbolizer.symbolize(reversed(info.stack), self.storage.mapper)
+                    stack_str = symbolizer.symbolize(reversed(info.stack), self.mapper)
                     stack = stack_str.rstrip().split("\n")
                     self.insert(stack, info.info, self.tree[1], 1, root)
 

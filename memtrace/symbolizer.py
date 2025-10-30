@@ -13,9 +13,9 @@ class Symbolizer:
     Read input addresses and return
     corresponding source code locations.
     """
-    def __init__(self, prefix="\t"):
+    def __init__(self, symbolizer_path, prefix="\t"):
         self.prefix = prefix
-        self.symbolizer = Popen("/usr/bin/llvm-symbolizer-17",
+        self.symbolizer = Popen(symbolizer_path,
                                 stdin=PIPE, stdout=PIPE, stderr=PIPE,
                                 universal_newlines=True, bufsize=1)
 

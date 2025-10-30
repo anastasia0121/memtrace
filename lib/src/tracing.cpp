@@ -5,15 +5,16 @@
 #include <iomanip>
 #include <limits.h>
 #include <link.h>
+#include <malloc.h>
 #include <math.h>
 #include <ostream>
 #include <pthread.h>
+#include <shared_mutex>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
 #include <unistd.h>
-#include <malloc.h>
 
 namespace memtrace {
 
@@ -22,6 +23,7 @@ thread_local const void *t_stack_end = nullptr;
 storage *storage::s_storage = nullptr;
 bool storage::s_use_memory_tracing = false;
 bool storage::s_usable_size = false;
+bool storage::s_unw = true;
 
 // Jenkins hash function
 uint64_t hash_32(uint64_t key)
@@ -157,7 +159,7 @@ void storage::alloc_ptr_i(void *ptr, stack_view &sv, size_t size)
 
 void storage::free_ptr_i(void *ptr)
 {
-    pointer_info info;
+    pointer_info ptr_info;
 
     // find an allocation
     uint64_t map_number = get_slice(ptr);
@@ -167,16 +169,53 @@ void storage::free_ptr_i(void *ptr)
         pointer_map_t &map = m_pointers[map_number];
         auto it = map.find(ptr);
         if (map.end() != it) {
-            info = it->second;
+            ptr_info = it->second;
             map.erase(it);
         }
     }
 
     // if the allocation happens after tracing start
-    if (info.sinfo) {
-        info.sinfo->add_free(info.size);
-        m_statistics.add_free(info.size);
+    if (ptr_info.sinfo) {
+        ptr_info.sinfo->add_free(ptr_info.size);
+        m_statistics.add_free(ptr_info.size);
+        return;
     }
+
+    // if the allocation happens before tracing start
+    std::uint64_t size = malloc_usable_size(ptr);
+    m_statistics.add_free_no_alloc(size);
+
+    uintptr_t stack[s_max_stack_length];
+    stack_view sv = s_unw ? get_stack_unw(stack) : get_stack(stack);
+
+    stack_info *info = nullptr;
+    map_number = get_slice(sv);
+
+    auto &map = m_free_storage[map_number];
+    {
+        // uint64_t hash = sv.get_hash_value();
+        std::shared_lock<std::shared_mutex> lock(m_free_mutexes[map_number]);
+        auto it = map.find(sv);
+        if (map.end() != it) {
+            info = it->second;
+        }
+    }
+
+    // double lock and double find in the worst case.
+    if (!info) {
+        // allocate trace
+        info = new stack_info(sv);
+        sv = info->get_stack_view();
+
+        std::unique_lock<std::shared_mutex> lock(m_free_mutexes[map_number]);
+        auto [it, emplaced] = map.try_emplace(sv, info);
+        if (!emplaced) {
+            delete info;
+            info = it->second;
+        }
+    }
+
+    info->add_free(size);
 }
 
 storage::storage()
@@ -237,6 +276,7 @@ void storage::dump(std::ostream &strm)
     dump_uint64_t(strm, m_statistics.get_now_in_memory());
     dump_uint64_t(strm, m_statistics.get_all_allocations());
     dump_uint64_t(strm, m_statistics.get_memory_peak());
+    dump_uint64_t(strm, m_statistics.get_free_no_alloc());
 
     time_t dump_time = std::time(nullptr);
     dump_uint64_t(strm, m_shared_data.start_time);
@@ -248,6 +288,7 @@ void storage::dump(std::ostream &strm)
         ptr_count += m_pointers[i].bucket_count();
     }
 
+    // TODO: abseil is replaced by std::unordered map
     // From abseil documentation.
     // The container uses O((sizeof(std::pair<const K, V>) + 1) * bucket_count()) bytes.
     uint64_t ptr_overhead = ptr_count * (sizeof(std::pair<void*, pointer_info>) + 1);
@@ -265,7 +306,7 @@ void storage::dump(std::ostream &strm)
     uint64_t stack_overhead = (frame_count * sizeof(void *)) + (stack_count * (sizeof(std::pair<stack_view, stack_info *>) + 1));
     dump_uint64_t(strm, stack_overhead);
 
-    for ( size_t i = 0; i < m_storage.size(); ++i) {
+    for (size_t i = 0; i < m_storage.size(); ++i) {
         std::shared_lock<std::shared_mutex> lock(m_mutexes[i]);
 
         for (const auto &[sv, info] : m_storage[i]) {
@@ -281,9 +322,24 @@ void storage::dump(std::ostream &strm)
             }
         }
     }
+
+    for (size_t i = 0; i < m_free_storage.size(); ++i) {
+        std::shared_lock<std::shared_mutex> lock(m_free_mutexes[i]);
+
+        for (const auto &[sv, info] : m_free_storage[i]) {
+            uint64_t size = sv.get_length();
+            if (0 != size) {
+                strm.put('f');
+                dump_uint64_t(strm, info->get_free_size());
+                dump_uint64_t(strm, info->get_free_counter());
+                dump_uint64_t(strm, size);
+                strm.write(reinterpret_cast<const char *>(sv.get_stack_ptr()), sizeof(uint64_t) * size);
+            }
+        }
+    }
 }
 
-const char *storage::enable_tracing(bool usable_size)
+const char *storage::enable_tracing(bool usable_size, bool unw)
 {
 #define ERROR_STR(str) str "\0\0\0\0\0\0\0";
     if (UNLIKELY(s_use_memory_tracing)) {
@@ -293,6 +349,7 @@ const char *storage::enable_tracing(bool usable_size)
 
     s_use_memory_tracing = true;
     s_usable_size = usable_size;
+    s_unw = unw;
 
     if (UNLIKELY(s_use_memory_tracing && !s_storage)) {
         s_storage = new storage();
@@ -447,9 +504,9 @@ const char *storage::set_tracing_file(const char *file_name)
 
 extern "C" {
 
-const void *enable_memory_tracing(bool usable_size)
+const void *enable_memory_tracing(bool usable_size, bool unw)
 {
-    return memtrace::storage::enable_tracing(usable_size);
+    return memtrace::storage::enable_tracing(usable_size, unw);
 }
 
 const void *disable_memory_tracing()

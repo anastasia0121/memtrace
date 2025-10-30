@@ -226,28 +226,36 @@ private:
  */
 struct statistics
 {
-    uint64_t get_all_allocations() const { return m_all; }
+    std::uint64_t get_all_allocations() const { return m_all; }
 
-    uint64_t get_now_in_memory() const { return m_in_memory; }
+    std::uint64_t get_now_in_memory() const { return m_in_memory; }
 
-    uint64_t get_memory_peak() const { return m_peak; }
+    std::uint64_t get_memory_peak() const { return m_peak; }
 
-    void add_allocation(uint64_t size);
+    std::uint64_t get_free_no_alloc() const { return m_free_no_alloc; }
 
-    void add_free(uint64_t size)
+    void add_allocation(std::uint64_t size);
+
+    void add_free(std::uint64_t size)
     {
         m_in_memory.fetch_sub(size, std::memory_order_relaxed);
     }
 
+    void add_free_no_alloc(std::uint64_t size)
+    {
+        m_free_no_alloc.fetch_add(size, std::memory_order_relaxed);
+    }
+
     void clear()
     {
-        m_all = m_in_memory = m_peak = 0;
+        m_all = m_in_memory = m_peak = m_free_no_alloc = 0;
     }
 
 private:
-    std::atomic<uint64_t> m_all = 0;
-    std::atomic<uint64_t> m_in_memory = 0;
-    std::atomic<uint64_t> m_peak = 0;
+    std::atomic<std::uint64_t> m_all = 0;
+    std::atomic<std::uint64_t> m_in_memory = 0;
+    std::atomic<std::uint64_t> m_peak = 0;
+    std::atomic<std::uint64_t> m_free_no_alloc = 0;
 };
 
 /**
@@ -256,7 +264,7 @@ private:
 struct storage
 {
 public:
-    static const char *enable_tracing(bool usable_size);
+    static const char *enable_tracing(bool usable_size, bool unw);
 
     static const char *disable_tracing();
 
@@ -307,8 +315,10 @@ private:
     static bool s_use_memory_tracing;
     // Take in attention the real backet size
     static bool s_usable_size;
+    // use libunwind
+    static bool s_unw;
 
-    uint64_t m_version = 1;
+    uint64_t m_version = 2;
 
     using allocation_map_t = std::unordered_map<stack_view, stack_info *>;
     std::array<allocation_map_t, s_slicing_count> m_storage;
@@ -317,6 +327,9 @@ private:
     using pointer_map_t = std::unordered_map<void *, pointer_info>;
     std::array<pointer_map_t, s_slicing_count> m_pointers;
     std::array<std::mutex, s_slicing_count> m_pointer_mutexes;
+
+    std::array<allocation_map_t, s_slicing_count> m_free_storage;
+    std::array<std::shared_mutex, s_slicing_count> m_free_mutexes;
 
     statistics m_statistics;
 
@@ -371,7 +384,7 @@ bool storage::init_stack_bound()
     return true;
 }
 
-stack_view storage::get_stack(uintptr_t *stack_ptr)
+stack_view storage::get_stack_unw(uintptr_t *stack_ptr)
 {
     unw_context_t uc;
     unw_cursor_t cursor;
@@ -392,7 +405,7 @@ stack_view storage::get_stack(uintptr_t *stack_ptr)
     return stack_view(stack_ptr, i);
 }
 
-stack_view storage::get_stack_unw(uintptr_t *stack_ptr)
+stack_view storage::get_stack(uintptr_t *stack_ptr)
 {
     if (UNLIKELY(!init_stack_bound())) {
         return stack_view();
@@ -432,7 +445,7 @@ void storage::alloc_ptr(void *old_ptr, size_t size, void *new_ptr)
     // malloc, realloc
     if (LIKELY(new_ptr)) {
         uintptr_t stack[s_max_stack_length];
-        stack_view sv = get_stack(stack);
+        stack_view sv = s_unw ? get_stack_unw(stack) : get_stack(stack);
         s_storage->alloc_ptr_i(new_ptr, sv, size);
     }
 

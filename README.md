@@ -35,7 +35,6 @@ Actions:
 
   -e, --enable          enable tracing
   -d, --disable         disable tracing
-  -s, --status          current status of tracing
 
 Output:
   Output options.

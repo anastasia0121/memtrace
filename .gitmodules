@@ -1,6 +1,0 @@
-[submodule "thd/abseil-cpp"]
-	path = thd/abseil-cpp
-	url = git@github.com:abseil/abseil-cpp.git
-[submodule "thd/googletest"]
-	path = thd/googletest
-	url = git@github.com:google/googletest.git

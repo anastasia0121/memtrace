@@ -19,7 +19,11 @@ target_sources(memtrace
     BASE_DIRS lib/include
     FILES lib/include/memtrace.h
 )
-target_link_libraries(memtrace PRIVATE unwind)
+
+find_library(UNWIND_LIB NAMES unwind libunwind.so REQUIRED)
+find_path(UNWIND_INCLUDE_DIR NAMES libunwind.h)
+target_include_directories(memtrace PRIVATE ${UNWIND_INCLUDE_DIR})
+target_link_libraries(memtrace PRIVATE ${UNWIND_LIB})
 
 include(GNUInstallDirs)
 install(TARGETS memtrace 

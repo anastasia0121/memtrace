@@ -42,7 +42,7 @@ class Symbolizer:
         local_addr = addr - lib.mapped_addr
         symbols = self.get_symbols(lib, local_addr)
         output = ""
-        for i in range(0, len(symbols), 2):
+        for i in range(0, len(symbols) - 1, 2):
             if symbols[i+1] == 0:
                 output += f"{self.prefix}{symbols[i]} from {lib.path}\n"
             else:

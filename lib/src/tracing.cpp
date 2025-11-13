@@ -339,6 +339,12 @@ void storage::dump(std::ostream &strm)
     }
 }
 
+static storage *get_storage()
+{
+    static storage instance;
+    return &instance;
+}
+
 const char *storage::enable_tracing(bool usable_size, bool unw)
 {
 #define ERROR_STR(str) str "\0\0\0\0\0\0\0";
@@ -352,7 +358,7 @@ const char *storage::enable_tracing(bool usable_size, bool unw)
     s_unw = unw;
 
     if (UNLIKELY(s_use_memory_tracing && !s_storage)) {
-        s_storage = new storage();
+        s_storage = get_storage();
     }
     s_storage->m_shared_data.start_time = std::time(nullptr);
 

@@ -264,6 +264,8 @@ private:
 struct storage
 {
 public:
+    storage();
+
     static const char *enable_tracing(bool usable_size, bool unw);
 
     static const char *disable_tracing();
@@ -280,8 +282,6 @@ public:
     void free_ptr(void *ptr);
 
 private:
-    storage();
-
     static __attribute__((always_inline)) inline
     bool init_stack_bound();
 

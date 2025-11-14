@@ -221,12 +221,10 @@ void storage::free_ptr_i(void *ptr)
 storage::storage()
 {
     for (size_t i = 0; i < m_pointers.size(); ++i) {
-        std::unique_lock<std::mutex> lock(m_pointer_mutexes[i]);
         m_pointers[i].reserve(s_pointer_map_reserve);
     }
 
     for (size_t i = 0; i < m_storage.size(); ++i) {
-        std::unique_lock<std::shared_mutex> lock(m_mutexes[i]);
         m_storage[i].reserve(s_allocation_map_reserve);
     }
 }

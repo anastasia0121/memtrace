@@ -32,7 +32,7 @@ class MemFrame:
 
 
 class FrameTree:
-    def __init__(self, stats, stacks_info, mapper, symbolizer_path, max_length=129):
+    def __init__(self, stats, stacks_info, mapper, symbolizer_path, max_length=200):
         self.stacks_info = stacks_info
         self.mapper = mapper
         self.tree = [[] for _ in range(max_length)]

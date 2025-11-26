@@ -345,11 +345,9 @@ static storage *get_storage()
 
 const char *storage::enable_tracing(bool usable_size, bool unw)
 {
-#define ERROR_STR(str) str "\0\0\0\0\0\0\0";
     if (UNLIKELY(s_use_memory_tracing)) {
-        return ERROR_STR("Tracing has already enabled");
+        return "Tracing has already enabled";
     }
-#undef ERROR_STR
 
     s_use_memory_tracing = true;
     s_usable_size = usable_size;
@@ -489,15 +487,18 @@ void *storage::get_shared_data()
 
 const char *storage::set_tracing_file(const char *file_name)
 {
-#define ERROR_STR(str) str "\0\0\0\0\0\0\0";
     if (!s_use_memory_tracing || !s_storage) {
-        return ERROR_STR("tracing is not enabled");
+        return "tracing is not enabled";
     }
-#undef ERROR_STR
+
+    std::string fname(file_name);
+    if (!fname.ends_with(".mt")) {
+        fname += ".mt";
+    }
+
     SharedData *sd = &(s_storage->m_shared_data);
     std::memset(sd->data, 0, s_shared_size);
-    uint64_t len = std::strlen(file_name);
-    std::memcpy(sd->data, file_name, std::min(s_shared_size - 1, len));
+    std::memcpy(sd->data, fname.data(), std::min(s_shared_size - 1, fname.size()));
     return nullptr;
 }
 

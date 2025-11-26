@@ -5,6 +5,7 @@ import contextlib
 import os
 import signal
 import sys
+import json
 
 from subprocess import Popen, PIPE
 
@@ -15,9 +16,9 @@ class Symbolizer:
     """
     def __init__(self, symbolizer_path, prefix="\t"):
         self.prefix = prefix
-        self.symbolizer = Popen(symbolizer_path,
-                                stdin=PIPE, stdout=PIPE, stderr=PIPE,
-                                universal_newlines=True, bufsize=1)
+        self.symbolizer = Popen([symbolizer_path, "--output-style=JSON", "-s"],
+                                 stdin=PIPE, stdout=PIPE, stderr=PIPE,
+                                 universal_newlines=True, bufsize=1)
 
     def close(self):
         """
@@ -40,15 +41,7 @@ class Symbolizer:
             return f"{self.prefix}<< stack pointer broken >>\n"
 
         local_addr = addr - lib.mapped_addr
-        symbols = self.get_symbols(lib, local_addr)
-        output = ""
-        for i in range(0, len(symbols) - 1, 2):
-            if symbols[i+1] == 0:
-                output += f"{self.prefix}{symbols[i]} from {lib.path}\n"
-            else:
-                file_name = os.path.basename(symbols[i+1])
-                output += f"{self.prefix}{symbols[i]} at {file_name}\n"
-        return output
+        return self.get_symbols(lib, local_addr)
 
     def symbolize(self, stack, mapper):
         """
@@ -69,12 +62,29 @@ class Symbolizer:
         """
         in_str = f"{lib.path} {hex(offset)}\n"
         print(in_str, file=self.symbolizer.stdin, flush=True)
-        pout = []
-        while True:
-            line = self.symbolizer.stdout.readline()
-            # double white line
-            if len(line) == 1:
-                self.symbolizer.stdout.readline()
-                break
-            pout.append(line.strip())
-        return pout
+
+        line = self.symbolizer.stdout.readline().strip()
+
+        symbol_json = json.loads(line)
+        if (not "Address" in symbol_json) or (not len(symbol_json["Symbol"])):
+            print("WARNING: empty address")
+            return f"{offset} from {lib}"
+
+        # read empty
+        self.symbolizer.stdout.readline()
+
+        # {"Address":"0xf5219",
+        #  "ModuleName":"mylib.so",
+        #  "Symbol":[{"Column":5, "Discriminator":0, "FileName":"file.c", "FunctionName":"func",
+        #             "Line":26781,"StartAddress":"0xf5200", "StartFileName":"file.c", "StartLine":26767}]}
+        out = ""
+        for symbol in symbol_json["Symbol"]:
+            func_name = symbol['FunctionName'] or hex(offset)
+            file_name = symbol['FileName']
+            file_line = symbol['Line']
+            if file_name:
+                out += f"{self.prefix}{func_name} at {file_name}:{file_line}\n"
+            else:
+                out += f"{self.prefix}{func_name} from {lib}\n"
+
+        return out

@@ -268,7 +268,7 @@ public:
 
     static const char *enable_tracing(bool usable_size, bool unw);
 
-    static const char *disable_tracing();
+    static const char *dump_tracing(bool disable);
 
     static void *get_shared_data();
 
@@ -301,7 +301,7 @@ private:
 
     void clear();
 
-    void dump(std::ostream &strm);
+    void dump(std::ostream &strm) const;
 
 private:
     static constexpr uint64_t s_slicing_count = 32;
@@ -322,14 +322,14 @@ private:
 
     using allocation_map_t = std::unordered_map<stack_view, stack_info *>;
     std::array<allocation_map_t, s_slicing_count> m_storage;
-    std::array<std::shared_mutex, s_slicing_count> m_mutexes;
+    mutable std::array<std::shared_mutex, s_slicing_count> m_mutexes;
 
     using pointer_map_t = std::unordered_map<void *, pointer_info>;
     std::array<pointer_map_t, s_slicing_count> m_pointers;
-    std::array<std::mutex, s_slicing_count> m_pointer_mutexes;
+    mutable std::array<std::mutex, s_slicing_count> m_pointer_mutexes;
 
     std::array<allocation_map_t, s_slicing_count> m_free_storage;
-    std::array<std::shared_mutex, s_slicing_count> m_free_mutexes;
+    mutable std::array<std::shared_mutex, s_slicing_count> m_free_mutexes;
 
     statistics m_statistics;
 

@@ -262,7 +262,7 @@ void dump_uint8_t(std::ostream &strm, char data)
     strm.write(reinterpret_cast<const char *>(&data), sizeof(uint8_t));
 }
 
-void storage::dump(std::ostream &strm)
+void storage::dump(std::ostream &strm) const
 {
     dump_uint8_t(strm, 'v');
     dump_uint64_t(strm, m_version);
@@ -440,42 +440,39 @@ static int dump_bin_info(struct dl_phdr_info *info, size_t size, void *data)
     return 0;
 }
 
-const char *storage::disable_tracing()
+const char *storage::dump_tracing(bool disable)
 {
-// 1. storage is not allocated as shared data
-// 2. does not make sense allocate storage when disable
-// 3. ptrace read by 4 bytes, so put 7 in the end
-#define ERROR_STR(str) str "\0\0\0\0\0\0\0";
-
     if (!s_use_memory_tracing) {
-        return ERROR_STR("tracing is not enabled");
+        return "tracing is not enabled";
     }
 
-    s_use_memory_tracing = false;
+    if (disable) {
+        s_use_memory_tracing = false;
+    }
     t_allocation_in_map = true;
 
     if (!s_storage) {
         t_allocation_in_map = false;
-        return ERROR_STR("storage is not initialized");
+        return "storage is not initialized";
     }
 
     std::string trace_file(s_storage->m_shared_data.data);
     std::ofstream file(trace_file, std::ios::out | std::ios::binary);
     if (!file.is_open()) {
         t_allocation_in_map = false;
-        return ERROR_STR("Cannot create tracing file");
+        return "Cannot create tracing file";
     }
 
     s_storage->dump(file);
-    s_storage->clear();
+    if (disable) {
+        s_storage->clear();
+    }
 
     File file_wrapper(file);
     dl_iterate_phdr(dump_bin_info, &file_wrapper);
     t_allocation_in_map = false;
 
     return nullptr;
-
-#undef ERROR_STR
 }
 
 void *storage::get_shared_data()
@@ -515,7 +512,12 @@ const void *enable_memory_tracing(bool usable_size, bool unw)
 
 const void *disable_memory_tracing()
 {
-    return memtrace::storage::disable_tracing();
+    return memtrace::storage::dump_tracing(true);
+}
+
+const void *dump_memory_tracing()
+{
+    return memtrace::storage::dump_tracing(false);
 }
 
 void *get_tracing_shared_data()

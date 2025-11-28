@@ -45,6 +45,119 @@ static realloc_f s_realloc_p;
 static free_f s_free_p;
 static pthread_getattr_np_f pthread_getattr_np_p;
 
+// Type definitions for C++ new/delete operators
+using new_operator_f = void* (*)(std::size_t);
+using new_array_operator_f = void* (*)(std::size_t);
+using new_nothrow_operator_f = void* (*)(std::size_t, const std::nothrow_t&);
+using new_array_nothrow_operator_f = void* (*)(std::size_t, const std::nothrow_t&);
+using delete_operator_f = void (*)(void*);
+using delete_array_operator_f = void (*)(void*);
+using delete_nothrow_operator_f = void (*)(void*, const std::nothrow_t&);
+using delete_array_nothrow_operator_f = void (*)(void*, const std::nothrow_t&);
+
+#if __cpp_sized_deallocation >= 201309
+using delete_sized_operator_f = void (*)(void*, std::size_t);
+using delete_array_sized_operator_f = void (*)(void*, std::size_t);
+#endif
+
+#if __cpp_aligned_new >= 201606
+using new_aligned_operator_f = void* (*)(std::size_t, std::align_val_t);
+using new_aligned_nothrow_operator_f = void* (*)(std::size_t, std::align_val_t, const std::nothrow_t);
+using new_array_aligned_operator_f = void* (*)(std::size_t, std::align_val_t);
+using new_array_aligned_nothrow_operator_f = void* (*)(std::size_t, std::align_val_t, const std::nothrow_t);
+using delete_aligned_operator_f = void (*)(void*, std::align_val_t);
+using delete_aligned_nothrow_operator_f = void (*)(void*, std::align_val_t, const std::nothrow_t);
+using delete_aligned_sized_operator_f = void (*)(void*, std::size_t, std::align_val_t);
+using delete_array_aligned_operator_f = void (*)(void*, std::align_val_t);
+using delete_array_aligned_nothrow_operator_f = void (*)(void*, std::align_val_t, const std::nothrow_t);
+using delete_array_aligned_sized_operator_f = void (*)(void*, std::size_t, std::align_val_t);
+#endif
+
+// Static function pointers for C++ new/delete operators
+static new_operator_f s_new_operator_p;
+static new_array_operator_f s_new_array_operator_p;
+static new_nothrow_operator_f s_new_nothrow_operator_p;
+static new_array_nothrow_operator_f s_new_array_nothrow_operator_p;
+static delete_operator_f s_delete_operator_p;
+static delete_array_operator_f s_delete_array_operator_p;
+static delete_nothrow_operator_f s_delete_nothrow_operator_p;
+static delete_array_nothrow_operator_f s_delete_array_nothrow_operator_p;
+
+#if __cpp_sized_deallocation >= 201309
+static delete_sized_operator_f s_delete_sized_operator_p;
+static delete_array_sized_operator_f s_delete_array_sized_operator_p;
+#endif
+
+#if __cpp_aligned_new >= 201606
+static new_aligned_operator_f s_new_aligned_operator_p;
+static new_aligned_nothrow_operator_f s_new_aligned_nothrow_operator_p;
+static new_array_aligned_operator_f s_new_array_aligned_operator_p;
+static new_array_aligned_nothrow_operator_f s_new_array_aligned_nothrow_operator_p;
+static delete_aligned_operator_f s_delete_aligned_operator_p;
+static delete_aligned_nothrow_operator_f s_delete_aligned_nothrow_operator_p;
+static delete_aligned_sized_operator_f s_delete_aligned_sized_operator_p;
+static delete_array_aligned_operator_f s_delete_array_aligned_operator_p;
+static delete_array_aligned_nothrow_operator_f s_delete_array_aligned_nothrow_operator_p;
+static delete_array_aligned_sized_operator_f s_delete_array_aligned_sized_operator_p;
+#endif
+
+static __attribute__((always_inline)) inline void initialize_new_operators()
+{
+    new_operator_f new_operator_p = reinterpret_cast<new_operator_f>(dlsym(RTLD_NEXT, "_Znwm"));
+    new_array_operator_f new_array_operator_p = reinterpret_cast<new_array_operator_f>(dlsym(RTLD_NEXT, "_Znam"));
+    new_nothrow_operator_f new_nothrow_operator_p = reinterpret_cast<new_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZnwmRKSt9nothrow_t"));
+    new_array_nothrow_operator_f new_array_nothrow_operator_p = reinterpret_cast<new_array_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZnamRKSt9nothrow_t"));
+    delete_operator_f delete_operator_p = reinterpret_cast<delete_operator_f>(dlsym(RTLD_NEXT, "_ZdlPv"));
+    delete_array_operator_f delete_array_operator_p = reinterpret_cast<delete_array_operator_f>(dlsym(RTLD_NEXT, "_ZdaPv"));
+    delete_nothrow_operator_f delete_nothrow_operator_p = reinterpret_cast<delete_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZdlPvRKSt9nothrow_t"));
+    delete_array_nothrow_operator_f delete_array_nothrow_operator_p = reinterpret_cast<delete_array_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZdaPvRKSt9nothrow_t"));
+
+    #if __cpp_sized_deallocation >= 201309
+    delete_sized_operator_f delete_sized_operator_p = reinterpret_cast<delete_sized_operator_f>(dlsym(RTLD_NEXT, "_ZdlPvm"));
+    delete_array_sized_operator_f delete_array_sized_operator_p = reinterpret_cast<delete_array_sized_operator_f>(dlsym(RTLD_NEXT, "_ZdaPvm"));
+    #endif
+
+    #if __cpp_aligned_new >= 201606
+    new_aligned_operator_f new_aligned_operator_p = reinterpret_cast<new_aligned_operator_f>(dlsym(RTLD_NEXT, "_ZnwmSt11align_val_t"));
+    new_aligned_nothrow_operator_f new_aligned_nothrow_operator_p = reinterpret_cast<new_aligned_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZnwmSt11align_val_tRKSt9nothrow_t"));
+    new_array_aligned_operator_f new_array_aligned_operator_p = reinterpret_cast<new_array_aligned_operator_f>(dlsym(RTLD_NEXT, "_ZnamSt11align_val_t"));
+    new_array_aligned_nothrow_operator_f new_array_aligned_nothrow_operator_p = reinterpret_cast<new_array_aligned_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZnamSt11align_val_tRKSt9nothrow_t"));
+    delete_aligned_operator_f delete_aligned_operator_p = reinterpret_cast<delete_aligned_operator_f>(dlsym(RTLD_NEXT, "_ZdlPvSt11align_val_t"));
+    delete_aligned_nothrow_operator_f delete_aligned_nothrow_operator_p = reinterpret_cast<delete_aligned_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZdlPvSt11align_val_tRKSt9nothrow_t"));
+    delete_aligned_sized_operator_f delete_aligned_sized_operator_p = reinterpret_cast<delete_aligned_sized_operator_f>(dlsym(RTLD_NEXT, "_ZdlPvmSt11align_val_t"));
+    delete_array_aligned_operator_f delete_array_aligned_operator_p = reinterpret_cast<delete_array_aligned_operator_f>(dlsym(RTLD_NEXT, "_ZdaPvSt11align_val_t"));
+    delete_array_aligned_nothrow_operator_f delete_array_aligned_nothrow_operator_p = reinterpret_cast<delete_array_aligned_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZdaPvSt11align_val_tRKSt9nothrow_t"));
+    delete_array_aligned_sized_operator_f delete_array_aligned_sized_operator_p = reinterpret_cast<delete_array_aligned_sized_operator_f>(dlsym(RTLD_NEXT, "_ZdaPvmSt11align_val_t"));
+    #endif
+
+    s_new_operator_p = new_operator_p;
+    s_new_array_operator_p = new_array_operator_p;
+    s_new_nothrow_operator_p = new_nothrow_operator_p;
+    s_new_array_nothrow_operator_p = new_array_nothrow_operator_p;
+    s_delete_operator_p = delete_operator_p;
+    s_delete_array_operator_p = delete_array_operator_p;
+    s_delete_nothrow_operator_p = delete_nothrow_operator_p;
+    s_delete_array_nothrow_operator_p = delete_array_nothrow_operator_p;
+
+    #if __cpp_sized_deallocation >= 201309
+    s_delete_sized_operator_p = delete_sized_operator_p;
+    s_delete_array_sized_operator_p = delete_array_sized_operator_p;
+    #endif
+
+    #if __cpp_aligned_new >= 201606
+    s_new_aligned_operator_p = new_aligned_operator_p;
+    s_new_aligned_nothrow_operator_p = new_aligned_nothrow_operator_p;
+    s_new_array_aligned_operator_p = new_array_aligned_operator_p;
+    s_new_array_aligned_nothrow_operator_p = new_array_aligned_nothrow_operator_p;
+    s_delete_aligned_operator_p = delete_aligned_operator_p;
+    s_delete_aligned_nothrow_operator_p = delete_aligned_nothrow_operator_p;
+    s_delete_aligned_sized_operator_p = delete_aligned_sized_operator_p;
+    s_delete_array_aligned_operator_p = delete_array_aligned_operator_p;
+    s_delete_array_aligned_nothrow_operator_p = delete_array_aligned_nothrow_operator_p;
+    s_delete_array_aligned_sized_operator_p = delete_array_aligned_sized_operator_p;
+    #endif
+}
+
 static __attribute__((always_inline)) inline bool initialize()
 {
     if (UNLIKELY(!s_malloc_p)) {
@@ -54,6 +167,8 @@ static __attribute__((always_inline)) inline bool initialize()
         }
 
         s_init = true;
+
+        initialize_new_operators();
 
         calloc_f calloc_p = reinterpret_cast<calloc_f>(dlsym(RTLD_NEXT, "calloc"));
         malloc_f malloc_p = reinterpret_cast<malloc_f>(dlsym(RTLD_NEXT, "malloc"));
@@ -124,14 +239,18 @@ void *memalign(size_t align, size_t size)
 
 void free(void *ptr)
 {
-    memtrace::storage::free_ptr(ptr);
-    s_free_p(ptr);
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_free_p(ptr);
+    }
 }
 
 void dallocx(void *ptr, int flags)
 {
-    memtrace::storage::free_ptr(ptr);
-    s_dallocx_p(ptr, flags);
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_dallocx_p(ptr, flags);
+    }
 }
 
 void *realloc(void *ptr, size_t size)
@@ -174,5 +293,188 @@ int pthread_getattr_np(pthread_t thread, pthread_attr_t *attr)
 
     return ret;
 }
+
+void *operator new(std::size_t size)
+{
+    if (LIKELY(initialize())) {
+        void *ptr = s_new_operator_p(size);
+        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        return ptr;
+    }
+    return nullptr;
+}
+
+void *operator new[](std::size_t size)
+{
+    if (LIKELY(initialize())) {
+        void *ptr = s_new_array_operator_p(size);
+        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        return ptr;
+    }
+    return nullptr;
+}
+
+void *operator new(std::size_t size, const std::nothrow_t &nothrow) noexcept
+{
+    if (LIKELY(initialize())) {
+        void *ptr = s_new_nothrow_operator_p(size, nothrow);
+        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        return ptr;
+    }
+    return nullptr;
+}
+
+void *operator new[](std::size_t size, const std::nothrow_t &nothrow) noexcept
+{
+    if (LIKELY(initialize())) {
+        void *ptr = s_new_array_nothrow_operator_p(size, nothrow);
+        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        return ptr;
+    }
+    return nullptr;
+}
+
+void operator delete(void *ptr) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_operator_p(ptr);
+    }
+}
+
+void operator delete[](void *ptr) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_array_operator_p(ptr);
+    }
+}
+
+void operator delete(void *ptr, const std::nothrow_t &nothrow) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_nothrow_operator_p(ptr, nothrow);
+    }
+}
+
+void operator delete[](void *ptr, const std::nothrow_t &nothrow) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_array_nothrow_operator_p(ptr, nothrow);
+    }
+}
+
+#if __cpp_sized_deallocation >= 201309
+/* C++14's sized-delete operators. */
+void operator delete(void *ptr, std::size_t size) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_sized_operator_p(ptr, size);
+    }
+}
+
+void operator delete[](void *ptr, std::size_t size) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_array_sized_operator_p(ptr, size);
+    }
+}
+#endif
+
+#if __cpp_aligned_new >= 201606
+/* C++17's over-aligned operators. */
+void *operator new(std::size_t size, std::align_val_t align)
+{
+    if (LIKELY(initialize())) {
+        void *ptr = s_new_aligned_operator_p(size, align);
+        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        return ptr;
+    }
+    return nullptr;
+
+}
+
+void *operator new(std::size_t size, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
+{
+    if (LIKELY(initialize())) {
+        void *ptr = s_new_aligned_nothrow_operator_p(size, align, nothrow);
+        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        return ptr;
+    }
+    return nullptr;
+}
+
+void *operator new[](std::size_t size, std::align_val_t align)
+{
+    if (LIKELY(initialize())) {
+        void *ptr = s_new_array_aligned_operator_p(size, align);
+        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        return ptr;
+    }
+    return nullptr;
+}
+
+void *operator new[](std::size_t size, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
+{
+    if (LIKELY(initialize())) {
+        void *ptr = s_new_array_aligned_nothrow_operator_p(size, align, nothrow);
+        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        return ptr;
+    }
+    return nullptr;
+}
+
+void operator delete(void* ptr, std::align_val_t align) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_aligned_operator_p(ptr, align);
+    }
+}
+
+void operator delete(void* ptr, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_aligned_nothrow_operator_p(ptr, align, nothrow);
+    }
+}
+
+void operator delete(void* ptr, std::size_t size, std::align_val_t align) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_aligned_sized_operator_p(ptr, size, align);
+    }
+}
+
+void operator delete[](void* ptr, std::align_val_t align) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_array_aligned_operator_p(ptr, align);
+    }
+}
+
+void operator delete[](void* ptr, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_array_aligned_nothrow_operator_p(ptr, align, nothrow);
+    }
+}
+
+void operator delete[](void* ptr, std::size_t size, std::align_val_t align) noexcept
+{
+    if (LIKELY(initialize())) {
+        memtrace::storage::free_ptr(ptr);
+        s_delete_array_aligned_sized_operator_p(ptr, size, align);
+    }
+}
+#endif
 
 }

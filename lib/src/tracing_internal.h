@@ -430,6 +430,10 @@ stack_view storage::get_stack(uintptr_t *stack_ptr)
 
 void storage::alloc_ptr(void *old_ptr, size_t size, void *new_ptr)
 {
+    if (LIKELY((uintptr_t)new_ptr < 4096)) {
+        return;
+    }
+
     // usual tracing is disable
     if (LIKELY(!s_use_memory_tracing || t_allocation_in_map || !s_storage)) {
         return;
@@ -454,6 +458,16 @@ void storage::alloc_ptr(void *old_ptr, size_t size, void *new_ptr)
 
 void storage::free_ptr(void *ptr)
 {
+    // Guard against recursive free during thread teardown
+    // update_get_addr (ti=0x707a1991df70, gen=<optimized out>) at ../elf/dl-tls.c:916
+    // __tls_get_addr () at ../sysdeps/x86_64/tls_get_addr.S:55
+    // free () from libmemtrace.so
+    // free (ptr=<optimized out>) at ../include/rtld-malloc.h:50
+    // _dl_update_slotinfo (req_modid=1, new_gen=2) at ../elf/dl-tls.c:822
+    if (LIKELY((uintptr_t)ptr < 4096)) {
+        return;
+    }
+
     if (LIKELY(!s_use_memory_tracing || t_allocation_in_map || !s_storage)) {
         return;
     }

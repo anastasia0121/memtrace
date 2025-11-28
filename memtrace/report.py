@@ -27,10 +27,7 @@ class Report:
         Make text report from mt file.
         """
         report = TxtReport(self.parser, self.symbolizer_path)
-        txt_file = self.mt_file.with_suffix('.txt')
-        print(f"txt file is {txt_file}")
-        with open(txt_file, "w") as txt_file:
-            txt_file.write(report.report())
+        report.report(self.mt_file)
 
     def report_tree(self):
         """
@@ -93,28 +90,33 @@ class TxtReport:
             return ""
         avg = int(memsize / cnt)
         output = symbolizer.symbolize(stack_info.stack, self.parser.mapper)
-        return f"Allocated {memsize} bytes in {cnt} allocations ({avg} bytes average)\n{output}\n"
+        return f"Allocated {memsize:,} B in {cnt} allocations ({avg:,} B average)\n{output}\n"
 
-    def report(self):
+    def report(self, mt_file):
         """
         Report all allocations.
         """
-        text = ""
         with contextlib.closing(Symbolizer(self.symbolizer_path)) as symbolizer:
+            text = ""
             for stack_info in self.parser.stacks_info:
                 text += self.report_stack(symbolizer, stack_info)
-
             memsize, cnt = self.parser.stats.not_freed()
-            text += f"Total: allocation {cnt} of total size {memsize}\n\n"
-
-            text += "FREE WITHOUT ALLOCATION\n"
-
-            for free_info in self.parser.free_info:
-                text += self.report_stack(symbolizer, free_info)
-
-            free_mem, free_count = self.parser.stats.freed_no_alloc()
-            text += f"Free without allocation {free_count} of size {free_mem}\n"
-
+            text += f"Total: allocation {cnt} of total size {memsize:,} B\n\n"
             text += self.parser.trace_info.to_text()
 
-        return text
+            txt_file = mt_file.with_suffix('.txt')
+            print(f"txt file is {txt_file}")
+            with open(txt_file, "w") as txt_file:
+                txt_file.write(text)
+
+            text = "FREE WITHOUT ALLOCATION\n"
+            for free_info in self.parser.free_info:
+                text += self.report_stack(symbolizer, free_info)
+            free_mem, free_count = self.parser.stats.freed_no_alloc()
+            text += f"Free without allocation {free_count} of size {free_mem:,} B\n\n"
+            text += self.parser.trace_info.to_text()
+
+            txt_file = mt_file.with_stem(mt_file.stem + "_free").with_suffix('.txt')
+            print(f"txt file is {txt_file}")
+            with open(txt_file, "w") as txt_file:
+                txt_file.write(text)

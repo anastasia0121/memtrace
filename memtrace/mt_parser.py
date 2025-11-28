@@ -188,6 +188,7 @@ class TraceInfo:
         duration = dump_time - start_time
         return (
             f"Full allocated amount (ignore free): {self.all_allocated:,} B {end}"
+            f"Allocated but not freed: {self.now_in_mem:,} B {end}"
             f"Memory peak: {self.memory_peak:,} B {end}"
             f"Free no alloc: {self.free_no_alloc:,} B {end}"
             f"Start time: {start_time} UTC {end}"

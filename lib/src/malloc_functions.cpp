@@ -36,6 +36,9 @@ using realloc_f = void *(*)(void *, size_t);
 using aligned_alloc_f = void* (*)(size_t, size_t);
 using posix_memalign_f = int (*)(void**, size_t, size_t);
 using pthread_getattr_np_f = int (*)(pthread_t, pthread_attr_t *);
+using valloc_f = void* (*)(size_t);
+using pvalloc_f = void* (*)(size_t);
+using reallocarray_f = void* (*)(void*, size_t, size_t);
 
 static calloc_f s_calloc_p;
 static malloc_f s_malloc_p;
@@ -48,6 +51,9 @@ static free_f s_free_p;
 static aligned_alloc_f s_aligned_alloc_p;
 static posix_memalign_f s_posix_memalign_p;
 static pthread_getattr_np_f pthread_getattr_np_p;
+static valloc_f s_valloc_p;
+static pvalloc_f s_pvalloc_p;
+static reallocarray_f s_reallocarray_p;
 
 // Type definitions for C++ new/delete operators
 using new_operator_f = void* (*)(std::size_t);
@@ -184,6 +190,9 @@ static __attribute__((always_inline)) inline bool initialize()
         free_f free_p = reinterpret_cast<free_f>(dlsym(RTLD_NEXT, "free"));
         aligned_alloc_f aligned_alloc_p = reinterpret_cast<aligned_alloc_f>(dlsym(RTLD_NEXT, "aligned_alloc"));
         posix_memalign_f posix_memalign_p = reinterpret_cast<posix_memalign_f>(dlsym(RTLD_NEXT, "posix_memalign"));
+        valloc_f valloc_p = reinterpret_cast<valloc_f>(dlsym(RTLD_NEXT, "valloc"));
+        pvalloc_f pvalloc_p = reinterpret_cast<pvalloc_f>(dlsym(RTLD_NEXT, "pvalloc"));
+        reallocarray_f reallocarray_p = reinterpret_cast<reallocarray_f>(dlsym(RTLD_NEXT, "reallocarray"));
 
         s_init = false;
 
@@ -197,6 +206,9 @@ static __attribute__((always_inline)) inline bool initialize()
         s_free_p = free_p;
         s_aligned_alloc_p = aligned_alloc_p;
         s_posix_memalign_p = posix_memalign_p;
+        s_valloc_p = valloc_p;
+        s_pvalloc_p = pvalloc_p;
+        s_reallocarray_p = reallocarray_p;
     }
     return true;
 }
@@ -281,7 +293,7 @@ void *rallocx(void *ptr, size_t size, int flags)
     return nullptr;
 }
 
-void* aligned_alloc(size_t alignment, size_t size)
+void *aligned_alloc(size_t alignment, size_t size)
 {
     if (LIKELY(initialize())) {
         void* ptr = s_aligned_alloc_p(alignment, size);
@@ -301,6 +313,36 @@ int posix_memalign(void** memptr, size_t alignment, size_t size)
         return ret;
     }
     return ENOMEM;
+}
+
+void *valloc(size_t size)
+{
+    if (LIKELY(initialize())) {
+        void* ptr = s_valloc_p(size);
+        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        return ptr;
+    }
+    return nullptr;
+}
+
+void *pvalloc(size_t size)
+{
+    if (LIKELY(initialize())) {
+        void* ptr = s_pvalloc_p(size);
+        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        return ptr;
+    }
+    return nullptr;
+}
+
+void *reallocarray(void* ptr, size_t nmemb, size_t size)
+{
+    if (LIKELY(initialize())) {
+        void* new_ptr = s_reallocarray_p(ptr, nmemb, size);
+        memtrace::storage::alloc_ptr(ptr, nmemb * size, new_ptr);
+        return new_ptr;
+    }
+    return nullptr;
 }
 
 /**

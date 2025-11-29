@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.10.2)
 project(memory_tracing DESCRIPTION "tracing library")
 
 set(CMAKE_CXX_FLAGS "-fno-omit-frame-pointer -fPIC -Wall -Wextra -Wshadow -Wpointer-arith -m64")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -g")
 set(CMAKE_CXX_FLAGS_DEBUG "-DDEBUG -g")
 set(CMAKE_CXX_STANDARD 23)
 

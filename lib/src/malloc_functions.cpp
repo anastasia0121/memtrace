@@ -33,6 +33,8 @@ using mallocx_f = void *(*)(size_t, int);
 using memalign_f = void *(*)(size_t, size_t);
 using rallocx_f = void *(*)(void *, size_t, int);
 using realloc_f = void *(*)(void *, size_t);
+using aligned_alloc_f = void* (*)(size_t, size_t);
+using posix_memalign_f = int (*)(void**, size_t, size_t);
 using pthread_getattr_np_f = int (*)(pthread_t, pthread_attr_t *);
 
 static calloc_f s_calloc_p;
@@ -43,6 +45,8 @@ static rallocx_f s_rallocx_p;
 static dallocx_f s_dallocx_p;
 static realloc_f s_realloc_p;
 static free_f s_free_p;
+static aligned_alloc_f s_aligned_alloc_p;
+static posix_memalign_f s_posix_memalign_p;
 static pthread_getattr_np_f pthread_getattr_np_p;
 
 // Type definitions for C++ new/delete operators
@@ -62,14 +66,14 @@ using delete_array_sized_operator_f = void (*)(void*, std::size_t);
 
 #if __cpp_aligned_new >= 201606
 using new_aligned_operator_f = void* (*)(std::size_t, std::align_val_t);
-using new_aligned_nothrow_operator_f = void* (*)(std::size_t, std::align_val_t, const std::nothrow_t);
+using new_aligned_nothrow_operator_f = void* (*)(std::size_t, std::align_val_t, const std::nothrow_t &);
 using new_array_aligned_operator_f = void* (*)(std::size_t, std::align_val_t);
-using new_array_aligned_nothrow_operator_f = void* (*)(std::size_t, std::align_val_t, const std::nothrow_t);
+using new_array_aligned_nothrow_operator_f = void* (*)(std::size_t, std::align_val_t, const std::nothrow_t &);
 using delete_aligned_operator_f = void (*)(void*, std::align_val_t);
-using delete_aligned_nothrow_operator_f = void (*)(void*, std::align_val_t, const std::nothrow_t);
+using delete_aligned_nothrow_operator_f = void (*)(void*, std::align_val_t, const std::nothrow_t &);
 using delete_aligned_sized_operator_f = void (*)(void*, std::size_t, std::align_val_t);
 using delete_array_aligned_operator_f = void (*)(void*, std::align_val_t);
-using delete_array_aligned_nothrow_operator_f = void (*)(void*, std::align_val_t, const std::nothrow_t);
+using delete_array_aligned_nothrow_operator_f = void (*)(void*, std::align_val_t, const std::nothrow_t &);
 using delete_array_aligned_sized_operator_f = void (*)(void*, std::size_t, std::align_val_t);
 #endif
 
@@ -178,6 +182,8 @@ static __attribute__((always_inline)) inline bool initialize()
         dallocx_f dallocx_p = reinterpret_cast<dallocx_f>(dlsym(RTLD_NEXT, "dallocx"));
         realloc_f realloc_p = reinterpret_cast<realloc_f>(dlsym(RTLD_NEXT, "realloc"));
         free_f free_p = reinterpret_cast<free_f>(dlsym(RTLD_NEXT, "free"));
+        aligned_alloc_f aligned_alloc_p = reinterpret_cast<aligned_alloc_f>(dlsym(RTLD_NEXT, "aligned_alloc"));
+        posix_memalign_f posix_memalign_p = reinterpret_cast<posix_memalign_f>(dlsym(RTLD_NEXT, "posix_memalign"));
 
         s_init = false;
 
@@ -189,6 +195,8 @@ static __attribute__((always_inline)) inline bool initialize()
         s_dallocx_p = dallocx_p;
         s_realloc_p = realloc_p;
         s_free_p = free_p;
+        s_aligned_alloc_p = aligned_alloc_p;
+        s_posix_memalign_p = posix_memalign_p;
     }
     return true;
 }
@@ -273,6 +281,28 @@ void *rallocx(void *ptr, size_t size, int flags)
     return nullptr;
 }
 
+void* aligned_alloc(size_t alignment, size_t size)
+{
+    if (LIKELY(initialize())) {
+        void* ptr = s_aligned_alloc_p(alignment, size);
+        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        return ptr;
+    }
+    return nullptr;
+}
+
+int posix_memalign(void** memptr, size_t alignment, size_t size)
+{
+    if (LIKELY(initialize())) {
+        int ret = s_posix_memalign_p(memptr, alignment, size);
+        if (ret == 0) {
+            memtrace::storage::alloc_ptr(nullptr, size, *memptr);
+        }
+        return ret;
+    }
+    return ENOMEM;
+}
+
 /**
  * The function is called on the stack initialization.
  * If someone calles the function earlier then stack bounds are initialized,
@@ -292,6 +322,8 @@ int pthread_getattr_np(pthread_t thread, pthread_attr_t *attr)
     t_in_pthread_getattr_np = false;
 
     return ret;
+}
+
 }
 
 void *operator new(std::size_t size)
@@ -476,5 +508,3 @@ void operator delete[](void* ptr, std::size_t size, std::align_val_t align) noex
     }
 }
 #endif
-
-}

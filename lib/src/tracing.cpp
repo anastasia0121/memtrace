@@ -18,7 +18,6 @@
 
 namespace memtrace {
 
-thread_local bool t_allocation_in_map = false;
 thread_local const void *t_stack_end = nullptr;
 storage *storage::s_storage = nullptr;
 bool storage::s_use_memory_tracing = false;
@@ -447,17 +446,15 @@ const char *storage::dump_tracing(bool disable)
     if (disable) {
         s_use_memory_tracing = false;
     }
-    t_allocation_in_map = true;
 
+    t_trace_guard gurd;
     if (!s_storage) {
-        t_allocation_in_map = false;
         return "storage is not initialized";
     }
 
     std::string trace_file(s_storage->m_shared_data.data);
     std::ofstream file(trace_file, std::ios::out | std::ios::binary);
     if (!file.is_open()) {
-        t_allocation_in_map = false;
         return "Cannot create tracing file";
     }
 
@@ -468,7 +465,6 @@ const char *storage::dump_tracing(bool disable)
 
     File file_wrapper(file);
     dl_iterate_phdr(dump_bin_info, &file_wrapper);
-    t_allocation_in_map = false;
 
     return nullptr;
 }

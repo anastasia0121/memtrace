@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cstring>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <unordered_map>
 
@@ -33,7 +34,42 @@ namespace memtrace {
 struct stack_info;
 
 // Skip allocations during tracing
-extern thread_local bool t_allocation_in_map;
+class t_trace_guard
+{
+public:
+    t_trace_guard(std::optional<void *> ptr = std::nullopt)
+    {
+        // Guard against recursive free during thread teardown
+        // update_get_addr (ti=0x707a1991df70, gen=<optimized out>) at ../elf/dl-tls.c:916
+        // __tls_get_addr () at ../sysdeps/x86_64/tls_get_addr.S:55
+        // free () from libmemtrace.so
+        // free (ptr=<optimized out>) at ../include/rtld-malloc.h:50
+        // _dl_update_slotinfo (req_modid=1, new_gen=2) at ../elf/dl-tls.c:822
+        if (!ptr || LIKELY(reinterpret_cast<uintptr_t>(ptr.value()) > 4096)) {
+            m_old = t_allocation_in_map;
+            t_allocation_in_map = true;
+            m_need_to_trace = !m_old;
+        }
+    }
+
+    ~t_trace_guard()
+    {
+        if (m_old) {
+            t_allocation_in_map = m_old.value();
+        }
+    }
+
+    bool need_to_trace() const 
+    {
+        return m_need_to_trace;
+    }
+
+private:
+    thread_local static inline bool t_allocation_in_map = false;
+    bool m_need_to_trace = false;
+    std::optional<bool> m_old;
+};
+
 // Bottom of the stack
 extern thread_local const void *t_stack_end;
 
@@ -430,16 +466,10 @@ stack_view storage::get_stack(uintptr_t *stack_ptr)
 
 void storage::alloc_ptr(void *old_ptr, size_t size, void *new_ptr)
 {
-    if (LIKELY((uintptr_t)new_ptr < 4096)) {
-        return;
-    }
-
     // usual tracing is disable
-    if (LIKELY(!s_use_memory_tracing || t_allocation_in_map || !s_storage)) {
+    if (LIKELY(!s_use_memory_tracing || !s_storage)) {
         return;
     }
-
-    t_allocation_in_map = true;
 
     // realloc
     if (old_ptr) {
@@ -452,30 +482,16 @@ void storage::alloc_ptr(void *old_ptr, size_t size, void *new_ptr)
         stack_view sv = s_unw ? get_stack_unw(stack) : get_stack(stack);
         s_storage->alloc_ptr_i(new_ptr, sv, size);
     }
-
-    t_allocation_in_map = false;
 }
 
 void storage::free_ptr(void *ptr)
 {
-    // Guard against recursive free during thread teardown
-    // update_get_addr (ti=0x707a1991df70, gen=<optimized out>) at ../elf/dl-tls.c:916
-    // __tls_get_addr () at ../sysdeps/x86_64/tls_get_addr.S:55
-    // free () from libmemtrace.so
-    // free (ptr=<optimized out>) at ../include/rtld-malloc.h:50
-    // _dl_update_slotinfo (req_modid=1, new_gen=2) at ../elf/dl-tls.c:822
-    if (LIKELY((uintptr_t)ptr < 4096)) {
-        return;
-    }
-
-    if (LIKELY(!s_use_memory_tracing || t_allocation_in_map || !s_storage)) {
+    if (LIKELY(!s_use_memory_tracing || !s_storage)) {
         return;
     }
 
     if (LIKELY(ptr)) {
-        t_allocation_in_map = true;
         s_storage->free_ptr_i(ptr);
-        t_allocation_in_map = false;
     }
 }
 

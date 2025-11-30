@@ -15,9 +15,6 @@
 #include <unistd.h>
 
 /**
-   int posix_memalign(void **ptr, size_t alignment, size_t size);
-   void *aligned_alloc(size_t alignment, size_t size);
-   void *rallocx(void *ptr, size_t size, int flags);
    size_t xallocx(void *ptr, size_t size, size_t extra, int flags);
    void sdallocx(void *ptr, size_t size, int flags);
    int mallctl(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
@@ -219,9 +216,13 @@ extern "C"
 
 void *malloc(size_t size)
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_malloc_p(size);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
     return nullptr;
@@ -229,9 +230,13 @@ void *malloc(size_t size)
 
 void *calloc(size_t number, size_t size)
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_calloc_p(number, size);
-        memtrace::storage::alloc_ptr(nullptr, number * size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, number * size, ptr);
+        }
         return ptr;
     }
     return nullptr;
@@ -239,9 +244,13 @@ void *calloc(size_t number, size_t size)
 
 void *mallocx(size_t size, int flags)
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_mallocx_p(size, flags);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
     return nullptr;
@@ -249,9 +258,13 @@ void *mallocx(size_t size, int flags)
 
 void *memalign(size_t align, size_t size)
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_memalign_p(align, size);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
     return nullptr;
@@ -259,25 +272,37 @@ void *memalign(size_t align, size_t size)
 
 void free(void *ptr)
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_free_p(ptr);
     }
 }
 
 void dallocx(void *ptr, int flags)
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_dallocx_p(ptr, flags);
     }
 }
 
 void *realloc(void *ptr, size_t size)
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
         void *new_ptr = s_realloc_p(ptr, size);
-        memtrace::storage::alloc_ptr(ptr, size, new_ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(ptr, size, new_ptr);
+        }
         return new_ptr;
     }
     return nullptr;
@@ -285,9 +310,13 @@ void *realloc(void *ptr, size_t size)
 
 void *rallocx(void *ptr, size_t size, int flags)
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
         void *new_ptr = s_rallocx_p(ptr, size, flags);
-        memtrace::storage::alloc_ptr(ptr, size, new_ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(ptr, size, new_ptr);
+        }
         return new_ptr;
     }
     return nullptr;
@@ -295,9 +324,13 @@ void *rallocx(void *ptr, size_t size, int flags)
 
 void *aligned_alloc(size_t alignment, size_t size)
 {
+    memtrace::t_trace_guard guard;
+    
     if (LIKELY(initialize())) {
         void* ptr = s_aligned_alloc_p(alignment, size);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
     return nullptr;
@@ -305,10 +338,13 @@ void *aligned_alloc(size_t alignment, size_t size)
 
 int posix_memalign(void** memptr, size_t alignment, size_t size)
 {
+    memtrace::t_trace_guard guard;
     if (LIKELY(initialize())) {
         int ret = s_posix_memalign_p(memptr, alignment, size);
         if (ret == 0) {
-            memtrace::storage::alloc_ptr(nullptr, size, *memptr);
+            if (guard.need_to_trace()) {
+                memtrace::storage::alloc_ptr(nullptr, size, *memptr);
+            }
         }
         return ret;
     }
@@ -317,9 +353,13 @@ int posix_memalign(void** memptr, size_t alignment, size_t size)
 
 void *valloc(size_t size)
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void* ptr = s_valloc_p(size);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
     return nullptr;
@@ -327,9 +367,13 @@ void *valloc(size_t size)
 
 void *pvalloc(size_t size)
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void* ptr = s_pvalloc_p(size);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
     return nullptr;
@@ -337,9 +381,13 @@ void *pvalloc(size_t size)
 
 void *reallocarray(void* ptr, size_t nmemb, size_t size)
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
         void* new_ptr = s_reallocarray_p(ptr, nmemb, size);
-        memtrace::storage::alloc_ptr(ptr, nmemb * size, new_ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(ptr, nmemb * size, new_ptr);
+        }
         return new_ptr;
     }
     return nullptr;
@@ -370,29 +418,41 @@ int pthread_getattr_np(pthread_t thread, pthread_attr_t *attr)
 
 void *operator new(std::size_t size)
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_new_operator_p(size);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
-    return nullptr;
+    throw std::bad_alloc();
 }
 
 void *operator new[](std::size_t size)
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_new_array_operator_p(size);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
-    return nullptr;
+    throw std::bad_alloc();
 }
 
 void *operator new(std::size_t size, const std::nothrow_t &nothrow) noexcept
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_new_nothrow_operator_p(size, nothrow);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
     return nullptr;
@@ -400,9 +460,13 @@ void *operator new(std::size_t size, const std::nothrow_t &nothrow) noexcept
 
 void *operator new[](std::size_t size, const std::nothrow_t &nothrow) noexcept
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_new_array_nothrow_operator_p(size, nothrow);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
     return nullptr;
@@ -410,32 +474,48 @@ void *operator new[](std::size_t size, const std::nothrow_t &nothrow) noexcept
 
 void operator delete(void *ptr) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_operator_p(ptr);
     }
 }
 
 void operator delete[](void *ptr) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_array_operator_p(ptr);
     }
 }
 
 void operator delete(void *ptr, const std::nothrow_t &nothrow) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_nothrow_operator_p(ptr, nothrow);
     }
 }
 
 void operator delete[](void *ptr, const std::nothrow_t &nothrow) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_array_nothrow_operator_p(ptr, nothrow);
     }
 }
@@ -444,16 +524,24 @@ void operator delete[](void *ptr, const std::nothrow_t &nothrow) noexcept
 /* C++14's sized-delete operators. */
 void operator delete(void *ptr, std::size_t size) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_sized_operator_p(ptr, size);
     }
 }
 
 void operator delete[](void *ptr, std::size_t size) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_array_sized_operator_p(ptr, size);
     }
 }
@@ -463,20 +551,28 @@ void operator delete[](void *ptr, std::size_t size) noexcept
 /* C++17's over-aligned operators. */
 void *operator new(std::size_t size, std::align_val_t align)
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_new_aligned_operator_p(size, align);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
-    return nullptr;
+    throw std::bad_alloc();
 
 }
 
 void *operator new(std::size_t size, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_new_aligned_nothrow_operator_p(size, align, nothrow);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
     return nullptr;
@@ -484,19 +580,27 @@ void *operator new(std::size_t size, std::align_val_t align, const std::nothrow_
 
 void *operator new[](std::size_t size, std::align_val_t align)
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_new_array_aligned_operator_p(size, align);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
-    return nullptr;
+    throw std::bad_alloc();
 }
 
 void *operator new[](std::size_t size, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
 {
+    memtrace::t_trace_guard guard;
+
     if (LIKELY(initialize())) {
         void *ptr = s_new_array_aligned_nothrow_operator_p(size, align, nothrow);
-        memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+        }
         return ptr;
     }
     return nullptr;
@@ -504,48 +608,72 @@ void *operator new[](std::size_t size, std::align_val_t align, const std::nothro
 
 void operator delete(void* ptr, std::align_val_t align) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+    
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_aligned_operator_p(ptr, align);
     }
 }
 
 void operator delete(void* ptr, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_aligned_nothrow_operator_p(ptr, align, nothrow);
     }
 }
 
 void operator delete(void* ptr, std::size_t size, std::align_val_t align) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_aligned_sized_operator_p(ptr, size, align);
     }
 }
 
 void operator delete[](void* ptr, std::align_val_t align) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_array_aligned_operator_p(ptr, align);
     }
 }
 
 void operator delete[](void* ptr, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_array_aligned_nothrow_operator_p(ptr, align, nothrow);
     }
 }
 
 void operator delete[](void* ptr, std::size_t size, std::align_val_t align) noexcept
 {
+    memtrace::t_trace_guard guard(ptr);
+
     if (LIKELY(initialize())) {
-        memtrace::storage::free_ptr(ptr);
+        if (guard.need_to_trace()) {
+            memtrace::storage::free_ptr(ptr);
+        }
         s_delete_array_aligned_sized_operator_p(ptr, size, align);
     }
 }

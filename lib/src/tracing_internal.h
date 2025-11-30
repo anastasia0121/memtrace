@@ -34,6 +34,8 @@ namespace memtrace {
 struct stack_info;
 
 // Skip allocations during tracing
+extern thread_local bool t_allocation_in_map;
+
 class t_trace_guard
 {
 public:
@@ -65,7 +67,6 @@ public:
     }
 
 private:
-    thread_local static inline bool t_allocation_in_map = false;
     bool m_need_to_trace = false;
     std::optional<bool> m_old;
 };

@@ -22,6 +22,8 @@
    int mallctlbymib(const size_t *mib, size_t miblen, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
 */
 
+thread_local bool t_allocation_in_map = false;
+
 using calloc_f = void *(*)(size_t, size_t);
 using dallocx_f = void *(*)(void *, int);
 using free_f = void *(*)(void *);

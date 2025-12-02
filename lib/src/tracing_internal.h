@@ -50,7 +50,7 @@ public:
         if (!ptr || LIKELY(reinterpret_cast<uintptr_t>(ptr.value()) > 4096)) {
             m_old = t_allocation_in_map;
             t_allocation_in_map = true;
-            m_need_to_trace = !m_old;
+            m_need_to_trace = !m_old.value();
         }
     }
 

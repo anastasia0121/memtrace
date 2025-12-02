@@ -18,6 +18,7 @@
 
 namespace memtrace {
 
+thread_local bool t_allocation_in_map = false;
 thread_local const void *t_stack_end = nullptr;
 storage *storage::s_storage = nullptr;
 bool storage::s_use_memory_tracing = false;

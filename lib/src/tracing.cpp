@@ -507,6 +507,11 @@ const void *enable_memory_tracing(bool usable_size, bool unw)
     return memtrace::storage::enable_tracing(usable_size, unw);
 }
 
+const void disable_not_dump()
+{
+    memtrace::storage::disbale();
+}
+
 const void *disable_memory_tracing()
 {
     return memtrace::storage::dump_tracing(true);

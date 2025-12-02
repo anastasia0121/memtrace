@@ -312,6 +312,8 @@ public:
 
     static const char *set_tracing_file(const char *file_name);
 
+    static void disbale() { s_use_memory_tracing = false; }
+
 public:
     static __attribute__((always_inline)) inline void alloc_ptr(void *old_ptr, size_t size, void *new_ptr);
 

@@ -29,12 +29,12 @@ bool storage::s_unw = true;
 uint64_t hash_32(uint64_t key)
 {
     uint32_t a = static_cast<uint32_t>(key);
-    a = (a+0x7ed55d16) + (a<<12);
-    a = (a^0xc761c23c) ^ (a>>19);
-    a = (a+0x165667b1) + (a<<5);
-    a = (a+0xd3a2646c) ^ (a<<9);
-    a = (a+0xfd7046c5) + (a<<3);
-    a = (a^0xb55a4f09) ^ (a>>16);
+    a = (a + 0x7ed55d16) + (a << 12);
+    a = (a ^ 0xc761c23c) ^ (a >> 19);
+    a = (a + 0x165667b1) + (a << 5);
+    a = (a + 0xd3a2646c) ^ (a << 9);
+    a = (a + 0xfd7046c5) + (a << 3);
+    a = (a ^ 0xb55a4f09) ^ (a >> 16);
     return a;
 }
 
@@ -90,7 +90,6 @@ uint64_t stack_view::get_small_hash_value() const
     return hash_32_small(m_stack[half] ^ m_length);
 }
 
-
 void statistics::add_allocation(uint64_t size)
 {
     m_all.fetch_add(size, std::memory_order_relaxed);
@@ -103,7 +102,6 @@ void statistics::add_allocation(uint64_t size)
         }
     }
 }
-
 
 uint64_t storage::get_slice(void *ptr)
 {
@@ -289,7 +287,7 @@ void storage::dump(std::ostream &strm) const
     // TODO: abseil is replaced by std::unordered map
     // From abseil documentation.
     // The container uses O((sizeof(std::pair<const K, V>) + 1) * bucket_count()) bytes.
-    uint64_t ptr_overhead = ptr_count * (sizeof(std::pair<void*, pointer_info>) + 1);
+    uint64_t ptr_overhead = ptr_count * (sizeof(std::pair<void *, pointer_info>) + 1);
     dump_uint64_t(strm, ptr_overhead);
 
     uint64_t frame_count = 0;
@@ -365,7 +363,8 @@ struct File
 {
     File(std::ofstream &_file)
         : file(_file)
-    {}
+    {
+    }
 
     void dump(uint64_t base_addr, uint64_t v_addr, uint64_t memsize, uint64_t path_lenght, const char *path)
     {
@@ -499,7 +498,7 @@ const char *storage::set_tracing_file(const char *file_name)
     return nullptr;
 }
 
-}
+} // namespace memtrace
 
 extern "C" {
 
@@ -527,5 +526,4 @@ const void *set_memory_tracing_file(const char *file_name)
 {
     return memtrace::storage::set_tracing_file(file_name);
 }
-
 }

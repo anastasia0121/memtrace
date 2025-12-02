@@ -48,4 +48,4 @@ TEST(stack_info, add_free)
     EXPECT_EQ(0, info.get_stack_view().get_length());
 }
 
-}
+} // namespace

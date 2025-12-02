@@ -45,4 +45,4 @@ TEST(statistics, clear)
     EXPECT_EQ(0, stats.get_memory_peak());
 }
 
-}
+} // namespace

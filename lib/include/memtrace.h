@@ -1,6 +1,6 @@
 #pragma once
 
-extern "C"  { 
+extern "C" {
 const void *enable_memory_tracing(bool usable_size, bool unw);
 const void *disable_memory_tracing();
 const void *dump_memory_tracing();

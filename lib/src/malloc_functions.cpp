@@ -30,17 +30,17 @@ using mallocx_f = void *(*)(size_t, int);
 using memalign_f = void *(*)(size_t, size_t);
 using rallocx_f = void *(*)(void *, size_t, int);
 using realloc_f = void *(*)(void *, size_t);
-using aligned_alloc_f = void* (*)(size_t, size_t);
-using posix_memalign_f = int (*)(void**, size_t, size_t);
+using aligned_alloc_f = void *(*)(size_t, size_t);
+using posix_memalign_f = int (*)(void **, size_t, size_t);
 using pthread_getattr_np_f = int (*)(pthread_t, pthread_attr_t *);
-using valloc_f = void* (*)(size_t);
-using pvalloc_f = void* (*)(size_t);
-using reallocarray_f = void* (*)(void*, size_t, size_t);
+using valloc_f = void *(*)(size_t);
+using pvalloc_f = void *(*)(size_t);
+using reallocarray_f = void *(*)(void *, size_t, size_t);
 
 static calloc_f s_calloc_p;
 static malloc_f s_malloc_p;
 static mallocx_f s_mallocx_p;
-static memalign_f s_memalign_p; 
+static memalign_f s_memalign_p;
 static rallocx_f s_rallocx_p;
 static dallocx_f s_dallocx_p;
 static realloc_f s_realloc_p;
@@ -53,31 +53,31 @@ static pvalloc_f s_pvalloc_p;
 static reallocarray_f s_reallocarray_p;
 
 // Type definitions for C++ new/delete operators
-using new_operator_f = void* (*)(std::size_t);
-using new_array_operator_f = void* (*)(std::size_t);
-using new_nothrow_operator_f = void* (*)(std::size_t, const std::nothrow_t&);
-using new_array_nothrow_operator_f = void* (*)(std::size_t, const std::nothrow_t&);
-using delete_operator_f = void (*)(void*);
-using delete_array_operator_f = void (*)(void*);
-using delete_nothrow_operator_f = void (*)(void*, const std::nothrow_t&);
-using delete_array_nothrow_operator_f = void (*)(void*, const std::nothrow_t&);
+using new_operator_f = void *(*)(std::size_t);
+using new_array_operator_f = void *(*)(std::size_t);
+using new_nothrow_operator_f = void *(*)(std::size_t, const std::nothrow_t &);
+using new_array_nothrow_operator_f = void *(*)(std::size_t, const std::nothrow_t &);
+using delete_operator_f = void (*)(void *);
+using delete_array_operator_f = void (*)(void *);
+using delete_nothrow_operator_f = void (*)(void *, const std::nothrow_t &);
+using delete_array_nothrow_operator_f = void (*)(void *, const std::nothrow_t &);
 
 #if __cpp_sized_deallocation >= 201309
-using delete_sized_operator_f = void (*)(void*, std::size_t);
-using delete_array_sized_operator_f = void (*)(void*, std::size_t);
+using delete_sized_operator_f = void (*)(void *, std::size_t);
+using delete_array_sized_operator_f = void (*)(void *, std::size_t);
 #endif
 
 #if __cpp_aligned_new >= 201606
-using new_aligned_operator_f = void* (*)(std::size_t, std::align_val_t);
-using new_aligned_nothrow_operator_f = void* (*)(std::size_t, std::align_val_t, const std::nothrow_t &);
-using new_array_aligned_operator_f = void* (*)(std::size_t, std::align_val_t);
-using new_array_aligned_nothrow_operator_f = void* (*)(std::size_t, std::align_val_t, const std::nothrow_t &);
-using delete_aligned_operator_f = void (*)(void*, std::align_val_t);
-using delete_aligned_nothrow_operator_f = void (*)(void*, std::align_val_t, const std::nothrow_t &);
-using delete_aligned_sized_operator_f = void (*)(void*, std::size_t, std::align_val_t);
-using delete_array_aligned_operator_f = void (*)(void*, std::align_val_t);
-using delete_array_aligned_nothrow_operator_f = void (*)(void*, std::align_val_t, const std::nothrow_t &);
-using delete_array_aligned_sized_operator_f = void (*)(void*, std::size_t, std::align_val_t);
+using new_aligned_operator_f = void *(*)(std::size_t, std::align_val_t);
+using new_aligned_nothrow_operator_f = void *(*)(std::size_t, std::align_val_t, const std::nothrow_t &);
+using new_array_aligned_operator_f = void *(*)(std::size_t, std::align_val_t);
+using new_array_aligned_nothrow_operator_f = void *(*)(std::size_t, std::align_val_t, const std::nothrow_t &);
+using delete_aligned_operator_f = void (*)(void *, std::align_val_t);
+using delete_aligned_nothrow_operator_f = void (*)(void *, std::align_val_t, const std::nothrow_t &);
+using delete_aligned_sized_operator_f = void (*)(void *, std::size_t, std::align_val_t);
+using delete_array_aligned_operator_f = void (*)(void *, std::align_val_t);
+using delete_array_aligned_nothrow_operator_f = void (*)(void *, std::align_val_t, const std::nothrow_t &);
+using delete_array_aligned_sized_operator_f = void (*)(void *, std::size_t, std::align_val_t);
 #endif
 
 // Static function pointers for C++ new/delete operators
@@ -119,12 +119,12 @@ static __attribute__((always_inline)) inline void initialize_new_operators()
     delete_nothrow_operator_f delete_nothrow_operator_p = reinterpret_cast<delete_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZdlPvRKSt9nothrow_t"));
     delete_array_nothrow_operator_f delete_array_nothrow_operator_p = reinterpret_cast<delete_array_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZdaPvRKSt9nothrow_t"));
 
-    #if __cpp_sized_deallocation >= 201309
+#if __cpp_sized_deallocation >= 201309
     delete_sized_operator_f delete_sized_operator_p = reinterpret_cast<delete_sized_operator_f>(dlsym(RTLD_NEXT, "_ZdlPvm"));
     delete_array_sized_operator_f delete_array_sized_operator_p = reinterpret_cast<delete_array_sized_operator_f>(dlsym(RTLD_NEXT, "_ZdaPvm"));
-    #endif
+#endif
 
-    #if __cpp_aligned_new >= 201606
+#if __cpp_aligned_new >= 201606
     new_aligned_operator_f new_aligned_operator_p = reinterpret_cast<new_aligned_operator_f>(dlsym(RTLD_NEXT, "_ZnwmSt11align_val_t"));
     new_aligned_nothrow_operator_f new_aligned_nothrow_operator_p = reinterpret_cast<new_aligned_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZnwmSt11align_val_tRKSt9nothrow_t"));
     new_array_aligned_operator_f new_array_aligned_operator_p = reinterpret_cast<new_array_aligned_operator_f>(dlsym(RTLD_NEXT, "_ZnamSt11align_val_t"));
@@ -135,7 +135,7 @@ static __attribute__((always_inline)) inline void initialize_new_operators()
     delete_array_aligned_operator_f delete_array_aligned_operator_p = reinterpret_cast<delete_array_aligned_operator_f>(dlsym(RTLD_NEXT, "_ZdaPvSt11align_val_t"));
     delete_array_aligned_nothrow_operator_f delete_array_aligned_nothrow_operator_p = reinterpret_cast<delete_array_aligned_nothrow_operator_f>(dlsym(RTLD_NEXT, "_ZdaPvSt11align_val_tRKSt9nothrow_t"));
     delete_array_aligned_sized_operator_f delete_array_aligned_sized_operator_p = reinterpret_cast<delete_array_aligned_sized_operator_f>(dlsym(RTLD_NEXT, "_ZdaPvmSt11align_val_t"));
-    #endif
+#endif
 
     s_new_operator_p = new_operator_p;
     s_new_array_operator_p = new_array_operator_p;
@@ -146,12 +146,12 @@ static __attribute__((always_inline)) inline void initialize_new_operators()
     s_delete_nothrow_operator_p = delete_nothrow_operator_p;
     s_delete_array_nothrow_operator_p = delete_array_nothrow_operator_p;
 
-    #if __cpp_sized_deallocation >= 201309
+#if __cpp_sized_deallocation >= 201309
     s_delete_sized_operator_p = delete_sized_operator_p;
     s_delete_array_sized_operator_p = delete_array_sized_operator_p;
-    #endif
+#endif
 
-    #if __cpp_aligned_new >= 201606
+#if __cpp_aligned_new >= 201606
     s_new_aligned_operator_p = new_aligned_operator_p;
     s_new_aligned_nothrow_operator_p = new_aligned_nothrow_operator_p;
     s_new_array_aligned_operator_p = new_array_aligned_operator_p;
@@ -162,7 +162,7 @@ static __attribute__((always_inline)) inline void initialize_new_operators()
     s_delete_array_aligned_operator_p = delete_array_aligned_operator_p;
     s_delete_array_aligned_nothrow_operator_p = delete_array_aligned_nothrow_operator_p;
     s_delete_array_aligned_sized_operator_p = delete_array_aligned_sized_operator_p;
-    #endif
+#endif
 }
 
 static __attribute__((always_inline)) inline bool initialize()
@@ -210,9 +210,7 @@ static __attribute__((always_inline)) inline bool initialize()
     return true;
 }
 
-
-extern "C"
-{
+extern "C" {
 
 void *malloc(size_t size)
 {
@@ -325,9 +323,9 @@ void *rallocx(void *ptr, size_t size, int flags)
 void *aligned_alloc(size_t alignment, size_t size)
 {
     memtrace::t_trace_guard guard;
-    
+
     if (LIKELY(initialize())) {
-        void* ptr = s_aligned_alloc_p(alignment, size);
+        void *ptr = s_aligned_alloc_p(alignment, size);
         if (guard.need_to_trace()) {
             memtrace::storage::alloc_ptr(nullptr, size, ptr);
         }
@@ -336,7 +334,7 @@ void *aligned_alloc(size_t alignment, size_t size)
     return nullptr;
 }
 
-int posix_memalign(void** memptr, size_t alignment, size_t size)
+int posix_memalign(void **memptr, size_t alignment, size_t size)
 {
     memtrace::t_trace_guard guard;
     if (LIKELY(initialize())) {
@@ -356,7 +354,7 @@ void *valloc(size_t size)
     memtrace::t_trace_guard guard;
 
     if (LIKELY(initialize())) {
-        void* ptr = s_valloc_p(size);
+        void *ptr = s_valloc_p(size);
         if (guard.need_to_trace()) {
             memtrace::storage::alloc_ptr(nullptr, size, ptr);
         }
@@ -370,7 +368,7 @@ void *pvalloc(size_t size)
     memtrace::t_trace_guard guard;
 
     if (LIKELY(initialize())) {
-        void* ptr = s_pvalloc_p(size);
+        void *ptr = s_pvalloc_p(size);
         if (guard.need_to_trace()) {
             memtrace::storage::alloc_ptr(nullptr, size, ptr);
         }
@@ -379,12 +377,12 @@ void *pvalloc(size_t size)
     return nullptr;
 }
 
-void *reallocarray(void* ptr, size_t nmemb, size_t size)
+void *reallocarray(void *ptr, size_t nmemb, size_t size)
 {
     memtrace::t_trace_guard guard(ptr);
 
     if (LIKELY(initialize())) {
-        void* new_ptr = s_reallocarray_p(ptr, nmemb, size);
+        void *new_ptr = s_reallocarray_p(ptr, nmemb, size);
         if (guard.need_to_trace()) {
             memtrace::storage::alloc_ptr(ptr, nmemb * size, new_ptr);
         }
@@ -413,7 +411,6 @@ int pthread_getattr_np(pthread_t thread, pthread_attr_t *attr)
 
     return ret;
 }
-
 }
 
 void *operator new(std::size_t size)
@@ -561,7 +558,6 @@ void *operator new(std::size_t size, std::align_val_t align)
         return ptr;
     }
     throw std::bad_alloc();
-
 }
 
 void *operator new(std::size_t size, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
@@ -606,10 +602,10 @@ void *operator new[](std::size_t size, std::align_val_t align, const std::nothro
     return nullptr;
 }
 
-void operator delete(void* ptr, std::align_val_t align) noexcept
+void operator delete(void *ptr, std::align_val_t align) noexcept
 {
     memtrace::t_trace_guard guard(ptr);
-    
+
     if (LIKELY(initialize())) {
         if (guard.need_to_trace()) {
             memtrace::storage::free_ptr(ptr);
@@ -618,7 +614,7 @@ void operator delete(void* ptr, std::align_val_t align) noexcept
     }
 }
 
-void operator delete(void* ptr, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
+void operator delete(void *ptr, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
 {
     memtrace::t_trace_guard guard(ptr);
 
@@ -630,7 +626,7 @@ void operator delete(void* ptr, std::align_val_t align, const std::nothrow_t &no
     }
 }
 
-void operator delete(void* ptr, std::size_t size, std::align_val_t align) noexcept
+void operator delete(void *ptr, std::size_t size, std::align_val_t align) noexcept
 {
     memtrace::t_trace_guard guard(ptr);
 
@@ -642,7 +638,7 @@ void operator delete(void* ptr, std::size_t size, std::align_val_t align) noexce
     }
 }
 
-void operator delete[](void* ptr, std::align_val_t align) noexcept
+void operator delete[](void *ptr, std::align_val_t align) noexcept
 {
     memtrace::t_trace_guard guard(ptr);
 
@@ -654,7 +650,7 @@ void operator delete[](void* ptr, std::align_val_t align) noexcept
     }
 }
 
-void operator delete[](void* ptr, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
+void operator delete[](void *ptr, std::align_val_t align, const std::nothrow_t &nothrow) noexcept
 {
     memtrace::t_trace_guard guard(ptr);
 
@@ -666,7 +662,7 @@ void operator delete[](void* ptr, std::align_val_t align, const std::nothrow_t &
     }
 }
 
-void operator delete[](void* ptr, std::size_t size, std::align_val_t align) noexcept
+void operator delete[](void *ptr, std::size_t size, std::align_val_t align) noexcept
 {
     memtrace::t_trace_guard guard(ptr);
 

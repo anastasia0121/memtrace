@@ -61,7 +61,7 @@ public:
         }
     }
 
-    bool need_to_trace() const 
+    bool need_to_trace() const
     {
         return m_need_to_trace;
     }
@@ -109,8 +109,8 @@ struct stack_view
     stack_view() = default;
 
     stack_view(uintptr_t *stack, uint64_t length)
-        : m_stack(stack)
-        , m_length(length)
+        : m_stack(stack),
+          m_length(length)
     {
     }
 
@@ -139,7 +139,7 @@ private:
     uint64_t m_length = 0;
 };
 
-}
+} // namespace memtrace
 
 namespace std {
 template <>
@@ -153,7 +153,7 @@ struct hash<memtrace::stack_view>
         return data.get_hash_value();
     }
 };
-}
+} // namespace std
 
 namespace memtrace {
 
@@ -216,7 +216,8 @@ struct stack_info
 {
     stack_info(stack_view sv)
         : m_stack(sv)
-    {}
+    {
+    }
 
     void add_allocation(uint64_t size)
     {
@@ -312,21 +313,16 @@ public:
     static const char *set_tracing_file(const char *file_name);
 
 public:
-    static __attribute__((always_inline)) inline
-    void alloc_ptr(void *old_ptr, size_t size, void *new_ptr);
+    static __attribute__((always_inline)) inline void alloc_ptr(void *old_ptr, size_t size, void *new_ptr);
 
-    static __attribute__((always_inline)) inline
-    void free_ptr(void *ptr);
+    static __attribute__((always_inline)) inline void free_ptr(void *ptr);
 
 private:
-    static __attribute__((always_inline)) inline
-    bool init_stack_bound();
+    static __attribute__((always_inline)) inline bool init_stack_bound();
 
-    static __attribute__((always_inline)) inline
-    stack_view get_stack(uintptr_t *stack_ptr);
+    static __attribute__((always_inline)) inline stack_view get_stack(uintptr_t *stack_ptr);
 
-    static __attribute__((always_inline)) inline
-    stack_view get_stack_unw(uintptr_t *stack_ptr);
+    static __attribute__((always_inline)) inline stack_view get_stack_unw(uintptr_t *stack_ptr);
 
     uint64_t get_slice(void *ptr);
 
@@ -372,7 +368,7 @@ private:
 
     // shared data between the libary and client
     static constexpr uint64_t s_shared_size = 1024;
-    struct  __attribute__((__packed__)) SharedData
+    struct __attribute__((__packed__)) SharedData
     {
         char data[s_shared_size] = {0};
         uint64_t start_time = 0;
@@ -434,10 +430,10 @@ stack_view storage::get_stack_unw(uintptr_t *stack_ptr)
         unw_word_t ip;
         unw_get_reg(&cursor, UNW_REG_IP, &ip);
         if (0 == ip) {
-             return stack_view(stack_ptr, i);
+            return stack_view(stack_ptr, i);
         }
         stack_ptr[i++] = ip;
-     }
+    }
 
     return stack_view(stack_ptr, i);
 }
@@ -496,4 +492,4 @@ void storage::free_ptr(void *ptr)
     }
 }
 
-}
+} // namespace memtrace

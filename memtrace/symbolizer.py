@@ -16,7 +16,8 @@ class Symbolizer:
     """
     def __init__(self, symbolizer_path, prefix="\t"):
         self.prefix = prefix
-        self.symbolizer = Popen([symbolizer_path, "--output-style=JSON", "-s"],
+        self.cache = {}
+        self.symbolizer = Popen([symbolizer_path, "--output-style=JSON", "-s", "--no-debuginfod"],
                                  stdin=PIPE, stdout=PIPE, stderr=PIPE,
                                  universal_newlines=True, bufsize=1)
 
@@ -60,6 +61,10 @@ class Symbolizer:
         """
         :return: symbols by offset
         """
+        cache_key = (lib.path, offset)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
         in_str = f"{lib.path} {hex(offset)}\n"
         print(in_str, file=self.symbolizer.stdin, flush=True)
 
@@ -68,7 +73,9 @@ class Symbolizer:
         symbol_json = json.loads(line)
         if (not "Address" in symbol_json) or (not len(symbol_json["Symbol"])):
             print("WARNING: empty address")
-            return f"{offset} from {lib}"
+            out = f"{offset} from {lib}"
+            self.cache[cache_key] = out
+            return out
 
         # read empty
         self.symbolizer.stdout.readline()
@@ -87,4 +94,5 @@ class Symbolizer:
             else:
                 out += f"{self.prefix}{func_name} from {lib}\n"
 
+        self.cache[cache_key] = out
         return out

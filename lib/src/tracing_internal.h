@@ -34,7 +34,7 @@ namespace memtrace {
 struct stack_info;
 
 // Skip allocations during tracing
-extern thread_local bool t_allocation_in_map;
+extern thread_local bool t_allocation_in_map __attribute__((tls_model("initial-exec")));
 
 class t_trace_guard
 {
@@ -72,7 +72,7 @@ private:
 };
 
 // Bottom of the stack
-extern thread_local const void *t_stack_end;
+extern thread_local const void *t_stack_end __attribute__((tls_model("initial-exec")));
 
 /**
  * From glibc:

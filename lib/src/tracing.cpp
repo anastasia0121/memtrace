@@ -18,8 +18,8 @@
 
 namespace memtrace {
 
-thread_local bool t_allocation_in_map = false;
-thread_local const void *t_stack_end = nullptr;
+thread_local bool t_allocation_in_map __attribute__((tls_model("initial-exec"))) = false;
+thread_local const void *t_stack_end __attribute__((tls_model("initial-exec"))) = nullptr;
 storage *storage::s_storage = nullptr;
 bool storage::s_use_memory_tracing = false;
 bool storage::s_usable_size = false;

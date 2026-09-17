@@ -7,7 +7,7 @@ import signal
 import sys
 import json
 
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, DEVNULL
 
 class Symbolizer:
     """
@@ -18,7 +18,7 @@ class Symbolizer:
         self.prefix = prefix
         self.cache = {}
         self.symbolizer = Popen([symbolizer_path, "--output-style=JSON", "-s", "--no-debuginfod"],
-                                 stdin=PIPE, stdout=PIPE, stderr=PIPE,
+                                 stdin=PIPE, stdout=PIPE, stderr=DEVNULL,
                                  universal_newlines=True, bufsize=1)
 
     def close(self):

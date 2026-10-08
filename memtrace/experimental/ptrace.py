@@ -4,15 +4,14 @@ Attach and call functions in tracee process.
 import copy
 import ctypes
 import ctypes.util
-import mmap
+import errno
 import os
 import signal
+import sys
 
 from util import fail_program, find_libs_segments, find_function_or_fail
 
-PTRACE_PEEKTEXT = 1
 PTRACE_PEEKDATA = 2
-PTRACE_POKETEXT = 4
 PTRACE_POKEDATA = 5
 PTRACE_CONT = 7
 PTRACE_GETREGS = 12
@@ -21,25 +20,31 @@ PTRACE_GETFPREGS = 14
 PTRACE_SETFPREGS = 15
 PTRACE_ATTACH = 16
 PTRACE_DETACH = 17
-PTRACE_SETOPTIONS = 0x4200
-PTRACE_GETSIGINFO = 0x4202
-PTRACE_SETSIGINFO = 0x4203
 PTRACE_GETREGSET = 0x4204
 PTRACE_SETREGSET = 0x4205
-PTRACE_SEIZE = 0x4206
-PTRACE_INTERRUPT = 0x4207
-
-PTRACE_O_TRACESYSGOOD = 0x1
 
 WALL = 0x40000000
 
 NT_X86_XSTATE = 0x202
-
-SI_MAX_SIZE = 128
-SI_PAD_SIZE = int(SI_MAX_SIZE / ctypes.sizeof(ctypes.c_int))
-SI_USER = 0
+# Big enough for any xsave layout the kernel reports (AMX included).
+# The kernel writes the real size back into iov_len.
+XSTATE_BUF_SIZE = 32 * 1024
 
 WSIZE = ctypes.sizeof(ctypes.c_long)
+
+RED_ZONE = 128
+EFLAGS_TF = 0x100
+EFLAGS_DF = 0x400
+# orig_rax value that tells the kernel "not in a syscall": no syscall restart
+# and no rip correction on resume.
+NO_SYSCALL = 0xffffffffffffffff
+INT3 = 0xcc
+# x86-64 SysV integer argument registers
+ARG_REGS = ("rdi", "rsi", "rdx", "rcx", "r8", "r9")
+# Synchronous signals: the called function itself caused them, do not pass them on.
+FAULT_SIGNALS = (signal.SIGSEGV, signal.SIGBUS, signal.SIGILL,
+                 signal.SIGFPE, signal.SIGTRAP)
+
 
 class UserFpregsStruct(ctypes.Structure):
     """
@@ -117,35 +122,10 @@ class RegCache:
         self.gpr = UserRegsStruct()
 
         self.use_xsave = False  # set if ptrace succeeds
-        self.xsave_area_size = self.get_xsave_area_size()
-        self.xsave_area = Iovec(self.xsave_area_size)
+        self.xsave_area = Iovec(XSTATE_BUF_SIZE)
 
         self.use_fxsave = False
         self.fpr = UserFpregsStruct()
-
-    def get_xsave_area_size(self):
-        """
-        Check if xsave is supported.
-
-        :return: size of xsave area
-        """
-        # cpuid_count(0xd, 0, eax, ebx, ecx, edx); ret ebx;
-        # 31 c9                   xor    %ecx,%ecx
-        # b8 0d 00 00 00          mov    $0xd,%eax
-        # 49 87 d8                xchg   %rbx,%r8
-        # 0f a2                   cpuid
-        # 49 87 d8                xchg   %rbx,%r8
-        # 44 89 c0                mov    %r8d,%eax
-        # c3                      ret
-        buf = mmap.mmap(-1, mmap.PAGESIZE,
-                        prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
-        code = bytes.fromhex("31c9b80d0000004987d80fa24987d84489c0c3")
-        buf.write(code)
-
-        ftype = ctypes.CFUNCTYPE(ctypes.c_int)
-        fpointer = ctypes.c_void_p.from_buffer(buf)
-        function = ftype(ctypes.addressof(fpointer))
-        return function()
 
     def save_regs(self):
         """
@@ -158,13 +138,16 @@ class RegCache:
 
         # as we call function somewhere in the middle of another function,
         # it is better to save all regs
-        if self.xsave_area_size:
-            if 0 == self.libc.ptrace(PTRACE_GETREGSET, self.pid,
-                                     NT_X86_XSTATE, ctypes.byref(self.xsave_area)):
-                self.use_xsave = True
+        # A fresh iovec on every save: the kernel shrinks iov_len to the real size.
+        self.use_xsave = False
+        self.xsave_area = Iovec(XSTATE_BUF_SIZE)
+        if 0 == self.libc.ptrace(PTRACE_GETREGSET, self.pid,
+                                 NT_X86_XSTATE, ctypes.byref(self.xsave_area)):
+            self.use_xsave = True
 
         # xsave area include fxsave
         # amd64, FXSAVE
+        self.use_fxsave = False
         if not self.use_xsave:
             if 0 == self.libc.ptrace(PTRACE_GETFPREGS, self.pid,
                                      None, ctypes.byref(self.fpr)):
@@ -185,56 +168,6 @@ class RegCache:
         if self.use_fxsave:
             if 0 != self.libc.ptrace(PTRACE_SETFPREGS, self.pid, None, ctypes.byref(self.fpr)):
                 fail_program(self.pid, "ptrace_setfpregs")
-
-    def clear(self):
-        """
-        Clear gpr, fpr, xsave_area values.
-        """
-        self.gpr = UserRegsStruct()
-
-        self.use_xsave = False  # set if ptrace succeeds
-        self.xsave_area = Iovec(self.xsave_area_size)
-
-        self.use_fxsave = False
-        self.fpr = UserFpregsStruct()
-
-
-class SISigsegv(ctypes.Structure):
-    """
-    SIGSEGV fields. From signal.h
-    """
-    _fields_ = [
-        ("si_signo", ctypes.c_int),
-        ("si_errno", ctypes.c_int),
-        ("si_code", ctypes.c_int),
-        # faulting insn/memory ref.
-        ("si_addr", ctypes.c_void_p),
-    ]
-
-
-class SISigint(ctypes.Structure):
-    """
-    SIGINT fields. From signal.h
-    """
-    _fields_ = [
-        ("si_signo", ctypes.c_int),
-        ("si_errno", ctypes.c_int),
-        ("si_code", ctypes.c_int),
-        ("si_pid", ctypes.c_int),
-        ("si_uid", ctypes.c_int),
-    ]
-
-
-class Siginfo(ctypes.Union):
-    """
-    Signal description. From signal.h
-    """
-    # _anonymous_ = ("sigsegv", "sigint",)
-    _fields_ = [
-        ("si_pad", ctypes.c_int * SI_PAD_SIZE),
-        ("sigsegv", SISigsegv),
-        ("sigint", SISigint),
-    ]
 
 
 def find_tracing_functions(pid):
@@ -263,38 +196,45 @@ def find_tracing_functions(pid):
 
 
 class PtraceTracer:
-    def __init__(self, pid):
+    def __init__(self, pid, unw=True):
+        """
+        :pid: process identifier
+        :unw: collect stacks with libunwind, frame pointers otherwise
+        """
         self.pid = pid
+        self.unw = unw
         self.tids = []
         self.libc = self.setup_ptrace_call()
         self.reg_cache = RegCache(self.pid, self.libc)
         self.used_memory = []
 
-        self.enable_addr, self.disable_addr, self.get_shared_data_addr = find_tracing_functions(pid)
+        self.enable_addr, self.disable_addr, self.get_data_addr = find_tracing_functions(pid)
 
     def enable(self):
         self.attach()
-        self.call_function(self.enable_addr, 0)
-        self.detach()
+        try:
+            # enable_memory_tracing(usable_size=false, unw), as in the gdb tracer
+            ret = self.call_function(self.enable_addr, 0, int(self.unw))
+            if ret:
+                fail_program(self.pid, "enable_memory_tracing", self.read_string(ret))
+        finally:
+            self.detach()
 
-    def get_shared_data_addr(self):
-        self.attach()
-        return self.call_function(self.get_shared_data_addr)
-    
     def disable(self, mt_fname):
         self.attach()
-        mt_fname_addr = self.call_function(self.get_shared_data_addr, 0)
-        if not mt_fname_addr:
-            fail_program(self.pid, "disable_memory_tracing", "return address is empty.")
-        self.write_string(mt_fname_addr, str(mt_fname))
+        try:
+            mt_fname_addr = self.call_function(self.get_data_addr)
+            if not mt_fname_addr:
+                fail_program(self.pid, "disable_memory_tracing", "return address is empty.")
+            self.write_string(mt_fname_addr, str(mt_fname))
 
-        ret = self.call_function(self.disable_addr)
-        if 0 != ret:
-            error = self.read_string(ret)
-            if error:
-                fail_program(self.pid, "disable_memory_tracing", error)
-
-        self.detach()
+            ret = self.call_function(self.disable_addr)
+            if 0 != ret:
+                error = self.read_string(ret)
+                if error:
+                    fail_program(self.pid, "disable_memory_tracing", error)
+        finally:
+            self.detach()
 
     def setup_ptrace_call(self):
         """
@@ -326,73 +266,130 @@ class PtraceTracer:
 
         return tids
 
-    def waitpid_or_fail(self, tid, expected):
+    def wait_stop(self, tid):
         """
-        Waitpid and exit if recieved signal is wrong.
+        Wait for the thread stop.
 
         :tid: thread identifier
-        :expected: expected signal
+        :return: stop signal or None if the thread is gone
         """
-        stat = os.waitpid(tid, WALL)
-        if os.WIFSTOPPED(stat[1]):
-            s = os.WSTOPSIG(stat[1])
-            if expected.value != s:
-                sname = signal.Signals(s)
-                fail_program(self.pid, "waitpid", f"Wrong signal is {sname}")
+        try:
+            _, stat = os.waitpid(tid, WALL)
+        except ChildProcessError:
+            return None
+        if os.WIFSTOPPED(stat):
+            return os.WSTOPSIG(stat)
+        return None
+
+    def attach_thread(self, tid):
+        """
+        Attach to one thread and wait until it is stopped by SIGSTOP.
+        Other signals that arrive first are passed on to the thread.
+
+        :tid: thread identifier
+        :return: False if the thread has already exited
+        """
+        if 0 != self.libc.ptrace(PTRACE_ATTACH, tid, None, None):
+            if ctypes.get_errno() == errno.ESRCH:
+                return False
+            fail_program(self.pid, f"ptrace_attach({tid})")
+
+        stop_sig = self.wait_stop(tid)
+        while stop_sig is not None and stop_sig != signal.SIGSTOP:
+            if 0 != self.libc.ptrace(PTRACE_CONT, tid, None, stop_sig):
+                fail_program(self.pid, f"ptrace_cont({tid})")
+            stop_sig = self.wait_stop(tid)
+
+        if stop_sig is None:
+            return False
+        self.tids.append(tid)
+        return True
 
     def attach(self):
         """
         Attach to process.
         Stop all threads.
         """
-        self.tids = self.find_process_threads()
-        for tid in self.tids:
-            if 0 != self.libc.ptrace(PTRACE_ATTACH, tid, None, None):
-                fail_program(self.pid, f"ptrace_attach({tid})")
-            self.waitpid_or_fail(tid, signal.SIGSTOP)
+        self.tids = []
+        seen = set()
+        try:
+            # threads can be created while we are attaching,
+            # repeat until every thread is stopped
+            while True:
+                new_tids = [tid for tid in self.find_process_threads() if tid not in seen]
+                if not new_tids:
+                    break
+                for tid in new_tids:
+                    seen.add(tid)
+                    self.attach_thread(tid)
+        except BaseException:
+            self.detach()
+            raise
 
     def detach(self):
         """
-        Detach.
+        Detach from all threads.
         """
-        for tid in self.tids:
+        tids, self.tids = self.tids, []
+        for tid in tids:
             if 0 != self.libc.ptrace(PTRACE_DETACH, tid, None, None):
-                fail_program(self.pid, f"ptrace_detach({tid})")
+                if ctypes.get_errno() != errno.ESRCH:
+                    print(f"warning: ptrace_detach({tid}): {os.strerror(ctypes.get_errno())}",
+                          file=sys.stderr)
 
-    def setup_call(self, func_addr, arg):
+    def get_regs(self):
+        """
+        :return: general purpose registers of the process main thread
+        """
+        regs = UserRegsStruct()
+        if 0 != self.libc.ptrace(PTRACE_GETREGS, self.pid, None, ctypes.byref(regs)):
+            fail_program(self.pid, "ptrace_getregs")
+        return regs
+
+    def setup_call(self, func_addr, args):
         """
         Prepare stack and regs to function call.
 
         :func_addr: addres of callable function
-        :arg: argument of the function
+        :args: integer arguments of the function
+        :return: address where the function returns to
         """
+        if len(args) > len(ARG_REGS):
+            fail_program(self.pid, "setup_call", "too many arguments")
+
         regs = copy.deepcopy(self.reg_cache.gpr)
 
-        # setup stack
-        rsp = regs.rsp
-        rsp = rsp & 0xfffffffffffffff0  # align
-        rsp = rsp - 128  # red zone
-        return_addr = rsp - 1
-        rsp = rsp - 16  # stay align
-        rsp = rsp - 8  # return addr
+        # setup stack, the red zone belongs to the interrupted function:
+        #   aligned - 128: end of the red zone
+        #   trap word: the function returns here
+        #   return address slot: rsp at the function entry (rsp % 16 == 8)
+        rsp = regs.rsp & 0xfffffffffffffff0
+        red_zone_end = rsp - RED_ZONE
+        trap_addr = red_zone_end - WSIZE
+        ret_slot = red_zone_end - 3 * WSIZE
 
-        regs.rsp = rsp
-        regs.rbp = rsp
-        regs.rip = func_addr + 2
-        regs.rdi = arg
-        regs.orig_eax = -1
+        regs.rsp = ret_slot
+        regs.rip = func_addr
+        # not in a syscall: the kernel must neither restart it nor move rip
+        regs.orig_rax = NO_SYSCALL
+        regs.rax = 0
+        for reg, value in zip(ARG_REGS, args):
+            setattr(regs, reg, value)
+        regs.eflags &= ~(EFLAGS_TF | EFLAGS_DF)
 
         # RESTORE state
-        self.save_word(rsp)
-        self.write_word(rsp, return_addr)
+        self.save_word(ret_slot)
+        self.write_word(ret_slot, trap_addr)
 
-        # SIGSEGV + SEGV_ACCERR
-        self.save_word(return_addr)
-        int3 = int("cc", base=16)
-        self.write_word(return_addr, int3)
+        # The stack is not executable: the return fails with SIGSEGV at trap_addr.
+        # If it is executable, int3 raises SIGTRAP instead.
+        self.save_word(trap_addr)
+        self.write_word(trap_addr, INT3)
 
         if 0 != self.libc.ptrace(PTRACE_SETREGS, self.pid, None, ctypes.byref(regs)):
             fail_program(self.pid, "setup_call, ptrace_setregs")
+
+        return trap_addr
 
     def save_word(self, addr):
         """
@@ -405,66 +402,50 @@ class PtraceTracer:
 
     def restore_words(self):
         """
-        Restore all memorized words.
+        Restore all memorized words, the last saved first.
         """
-        for addr, word in self.used_memory:
+        used_memory, self.used_memory = self.used_memory, []
+        for addr, word in reversed(used_memory):
             self.write_word(addr, word)
 
-    def replace_sigsegv(self):
-        """
-        Replace SIGSEGV for tracee process.
-        """
-        siginfo = Siginfo()
-        if 0 != self.libc.ptrace(PTRACE_GETSIGINFO, self.pid, None, ctypes.byref(siginfo)):
-            fail_program(self.pid, "ptrace_getsiginfo")
-
-        # if signal.SIGSEGV.value == siginfo.sigsegv.si_signo:
-        #     print(siginfo.sigsegv.si_code, hex(siginfo.sigsegv.si_addr))
-
-        siginfo = Siginfo()
-        siginfo.si_signo = signal.SIGINT.value
-        siginfo.si_pid = self.pid
-        siginfo.si_uid = 1001 # FIX user identifiers
-        siginfo.si_code = SI_USER
-        if 0 != self.libc.ptrace(PTRACE_SETSIGINFO, self.pid, None, ctypes.byref(siginfo)):
-            fail_program(self.pid, "ptrace_setsiginfo")
-
-    def get_return_value(self):
-        """
-        Recieve return value after function call.
-
-        :return: rax register content
-        """
-        regs = UserRegsStruct()
-        if 0 != self.libc.ptrace(PTRACE_GETREGS, self.pid, None, ctypes.byref(regs)):
-            fail_program(self.pid, "ptrace_getregs")
-
-        return regs.rax
-
-    def call_function(self, func_addr, arg=0):
+    def call_function(self, func_addr, *args):
         """
         Call function in tracee process.
+        Registers and memory of the process are restored in any case.
 
         :func_addr: function address to call
-        :arg: the first (and only) argument
+        :args: integer arguments of the function
         :return: return value of callable function
         """
         self.reg_cache.save_regs()
-        self.setup_call(func_addr, arg)
+        try:
+            trap_addr = self.setup_call(func_addr, args)
 
-        # continue execution until SIGSEGV
-        if 0 != self.libc.ptrace(PTRACE_CONT, self.pid, None, None):
-            fail_program(self.pid, "ptrace_cont")
+            sig = 0
+            while True:
+                if 0 != self.libc.ptrace(PTRACE_CONT, self.pid, None, sig):
+                    fail_program(self.pid, "ptrace_cont")
 
-        self.waitpid_or_fail(self.pid, signal.SIGSEGV)
-        self.replace_sigsegv()
+                stop_sig = self.wait_stop(self.pid)
+                if stop_sig is None:
+                    fail_program(self.pid, "call_function", "process exited during the call")
 
-        ret = self.get_return_value()
+                regs = self.get_regs()
+                if ((stop_sig == signal.SIGSEGV and regs.rip == trap_addr) or
+                        (stop_sig == signal.SIGTRAP and regs.rip == trap_addr + 1)):
+                    return regs.rax
 
-        self.reg_cache.restore_regs()
-        self.restore_words()
+                if stop_sig in FAULT_SIGNALS:
+                    fail_program(self.pid, "call_function",
+                                 f"function failed with {signal.Signals(stop_sig).name} "
+                                 f"at {hex(regs.rip)}")
 
-        return ret
+                # an ordinary signal (SIGCHLD, SIGALRM...) was sent to the process
+                # during the call: pass it on, SIGSTOP is our own
+                sig = 0 if stop_sig == signal.SIGSTOP else stop_sig
+        finally:
+            self.reg_cache.restore_regs()
+            self.restore_words()
 
     def write_word(self, addr, word):
         """
@@ -482,25 +463,26 @@ class PtraceTracer:
 
     def write_string(self, addr, data, limit=1024):
         """
-        Write string into tracee process memory.
+        Write zero terminated string into tracee process memory.
 
         :addr: start address to write
         :data: string to write
-        :limit: max string length. 1024 by default
+        :limit: size of the buffer in the process, terminator included.
+                1024 by default
         """
         if not addr:
             print("write_data(): addr is empty")
             return
 
-        bdata = bytes(data, encoding="utf-8")
+        bdata = bytes(data, encoding="utf-8") + b"\0"
         if len(bdata) > limit:
             fail_program(self.pid, "write_data", "limit overflow")
 
-        words = [bdata[i:i + WSIZE] for i in range(0, len(bdata), WSIZE)]
-        for word_bytes in words:
-            word = int.from_bytes(word_bytes, byteorder="little")
-            self.write_word(addr, word)
-            addr += WSIZE
+        # the last word is padded with zeros
+        bdata += bytes(-len(bdata) % WSIZE)
+        for offset in range(0, len(bdata), WSIZE):
+            word = int.from_bytes(bdata[offset:offset + WSIZE], byteorder="little")
+            self.write_word(addr + offset, word)
 
     def read_word(self, addr):
         """
@@ -512,15 +494,17 @@ class PtraceTracer:
         if not addr:
             return 0
 
+        # -1 is a valid word, only errno tells about an error
+        ctypes.set_errno(0)
         word = self.libc.ptrace(PTRACE_PEEKDATA, self.pid, addr, None)
-        if -1 == word:
+        if 0 != ctypes.get_errno():
             fail_program(self.pid, f"ptrace_peekdata({addr})")
 
         return word
 
     def read_string(self, addr, limit=1024):
         """
-        Read string from tracee process memory.
+        Read zero terminated string from tracee process memory.
 
         :addr: start address to read
         :limit: max string length. 1024 by default
@@ -529,13 +513,13 @@ class PtraceTracer:
         if not addr:
             return ""
 
-        max_addr = addr + limit
         ret = b""
-        while addr < max_addr:
-            word = self.read_word(addr)
-            if 0 == word:
+        for offset in range(0, limit, WSIZE):
+            chunk = self.read_word(addr + offset).to_bytes(WSIZE, byteorder='little')
+            end = chunk.find(b"\0")
+            if end >= 0:
+                ret += chunk[:end]
                 break
-            addr += WSIZE
-            ret += word.to_bytes(WSIZE, byteorder='little')
+            ret += chunk
 
-        return ret.decode("utf-8")
+        return ret.decode("utf-8", errors="replace")

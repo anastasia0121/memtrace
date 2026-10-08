@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10.2)
+cmake_minimum_required(VERSION 3.23)
 
 project(memory_tracing DESCRIPTION "tracing library")
 
@@ -21,7 +21,7 @@ target_sources(memtrace
 )
 
 find_library(UNWIND_LIB NAMES unwind libunwind.so REQUIRED)
-find_path(UNWIND_INCLUDE_DIR NAMES libunwind.h)
+find_path(UNWIND_INCLUDE_DIR NAMES libunwind.h REQUIRED)
 target_include_directories(memtrace PRIVATE ${UNWIND_INCLUDE_DIR})
 target_link_libraries(memtrace PRIVATE ${UNWIND_LIB})
 
@@ -41,19 +41,23 @@ install(EXPORT memtrace-targets
 )
 
 # tests
+#   cmake -B build -DENABLE_TESTS=ON
+#   cmake --build build --target memtrace_check
 option(ENABLE_TESTS "Enable tests" OFF)
 if (${ENABLE_TESTS})
   enable_testing()
 
-  add_subdirectory(thd/googletest)
+  find_package(GTest REQUIRED)
 
-  set(TEST_EXE ${LIB}_test)
+  set(TEST_EXE memtrace_test)
   file(GLOB TEST_SOURCES lib/test/*.cpp)
-  add_executable(${TEST_EXE} ${TEST_SOURCES})
-  target_include_directories(${TEST_EXE} PRIVATE lib/src)
-  
+  add_executable(${TEST_EXE} EXCLUDE_FROM_ALL ${TEST_SOURCES} lib/src/tracing.cpp)
+  target_include_directories(${TEST_EXE} PRIVATE lib/src lib/test ${UNWIND_INCLUDE_DIR})
+  target_link_libraries(${TEST_EXE} PRIVATE ${UNWIND_LIB} GTest::gtest)
+
   add_test(NAME ${TEST_EXE} COMMAND ${TEST_EXE})
-  add_custom_command(TARGET ${TEST_EXE} POST_BUILD
-    COMMAND ctest --output-on-failure)
+  add_custom_target(memtrace_check
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    DEPENDS ${TEST_EXE})
 endif()
 

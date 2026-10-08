@@ -17,13 +17,18 @@ class GDBTracer:
     """
     hack to enable tracing
     """
-    def __init__(self, pid):
+    def __init__(self, pid, unw=True):
+        """
+        :pid: process identifier
+        :unw: collect stacks with libunwind, frame pointers otherwise
+        """
         self.pid = pid
+        self.unw = unw
         self.gdb = None
 
     def enable(self):
-        self.gdb = Popen(["gdb", "attach", str(self.pid), 
-            "-ex", "p (const char *)enable_memory_tracing(0, 1)",
+        self.gdb = Popen(["gdb", "attach", str(self.pid),
+            "-ex", f"p (const char *)enable_memory_tracing(0, {int(self.unw)})",
             "-ex", "detach",
             "-ex", "set confirm off",
             "-ex", "q"],

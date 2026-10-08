@@ -53,6 +53,12 @@ class MTFile:
         size = self.read_int()
         return self.mt_file.read(size).decode("utf-8")
 
+    def skip(self, size):
+        """
+        Skip size bytes without reading them.
+        """
+        self.mt_file.seek(size, os.SEEK_CUR)
+
     def read_stack_of_fail(self, max_lenght=128):
         """
         Read uint64_t value as stack length.
@@ -73,6 +79,48 @@ class MTFile:
             frame = self.read_int()
             stack.append(frame)
         return stack
+
+
+def read_binaries(fname):
+    """
+    Read paths of all binaries (executable and shared libraries) from the file.
+    Allocation data is skipped, not parsed or aggregated.
+
+    :fname: *.mt file
+    :return: list of unique paths in file order
+    """
+    int_size = 8
+    paths = []
+    with contextlib.closing(MTFile(fname)) as mt_file:
+        while True:
+            record_type = mt_file.read_byte()
+            if not record_type:
+                break
+
+            if record_type == b'v':
+                # v, version, usable size, 8 counters
+                mt_file.read_int()
+                mt_file.skip(1 + 8 * int_size)
+
+            elif record_type == b's':
+                # s, addr, v_addr, so_memsize, size of path, path
+                mt_file.skip(3 * int_size)
+                paths.append(mt_file.read_string())
+
+            elif record_type == b'm':
+                # m, 4 counters, size of stack, stack
+                mt_file.skip(4 * int_size)
+                mt_file.skip(mt_file.read_int() * int_size)
+
+            elif record_type == b'f':
+                # f, 2 counters, size of stack, stack
+                mt_file.skip(2 * int_size)
+                mt_file.skip(mt_file.read_int() * int_size)
+
+            else:
+                sys.exit("Cannot recognize record type")
+
+    return list(dict.fromkeys(paths))
 
 
 def cmp_stacks(a, b):

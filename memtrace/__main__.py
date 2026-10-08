@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from gdb_tracer import GDBTracer
+from mt_parser import read_binaries
 from report import Report
 from util import fail_program
 
@@ -38,6 +39,15 @@ def report(mt_fname, tree, all, symbolizer):
     report.report_flame()
 
 
+def print_binaries(mt_fname):
+    """
+    Print paths of all binaries (executable and shared libraries) from the mt file,
+    one per line, without duplicates.
+    """
+    for path in read_binaries(mt_fname):
+        print(path)
+
+
 def main_func():
     if platform.uname()[4] != "x86_64":
         print("only x86_64 is supported")
@@ -56,14 +66,24 @@ def main_func():
     parser.add_argument("-f", "--file",
                         dest="mt_fname", action="store", metavar="FILE",
                         help="existing mt file")
+    parser.add_argument("-b", "--binaries",
+                        dest="binaries", action="store_true",
+                        help="print paths of all binaries from the mt file "
+                             "(-f is required) and exit, "
+                             "use it to check that all of them exist on the host "
+                             "where the file is parsed")
     parser.add_argument("-g", "--gdb",
                         dest="gdb", action=argparse.BooleanOptionalAction,
                         default=True,
-                        help="use gdb, always True, experimental flag")
+                        help="use gdb to attach to the process (default). "
+                             "--no-gdb attaches with ptrace, no heavy gdb process "
+                             "is needed. It is VERY experimental: the process can hang")
     parser.add_argument("-u", "--libunwind",
                         dest="unw", action=argparse.BooleanOptionalAction,
                         default=True,
-                        help="Use libunwind")
+                        help="Collect stacks with libunwind (default). "
+                             "--no-libunwind uses frame pointers, it is faster, but "
+                             "the application has to be built with -fno-omit-frame-pointer")
     parser.add_argument("-s", "--symbolizer",
                         dest="symbolizer", action="store",
                         default="/usr/bin/llvm-symbolizer-17",
@@ -98,7 +118,10 @@ def main_func():
     interactive = (not disable) and (not enable)
     mt_fname = options.mt_fname
     tree = options.tree
+    binaries = options.binaries
 
+    if binaries and (not mt_fname):
+        fail_program(0, "parse_args", "Binaries option requires the file option.")
 
     if mt_fname and (pid or enable or disable):
         fail_program(0, "parse_args",
@@ -118,6 +141,10 @@ def main_func():
         fail_program(pid, "find_proc_map",
                      f"There is no map for {pid}")
 
+    if binaries:
+        print_binaries(mt_fname)
+        sys.exit(0)
+
     # handel the exsisting mt file without tracing process
     if mt_fname:
         report(mt_fname, tree, all, options.symbolizer)
@@ -128,7 +155,13 @@ def main_func():
 
     print("Connection to process. Please wait.")
 
-    tracer = GDBTracer(pid)
+    if gdb:
+        tracer = GDBTracer(pid, options.unw)
+    else:
+        print("WARNING: --no-gdb attaches with ptrace, it is very experimental.")
+        # imported only on demand
+        from experimental.ptrace import PtraceTracer
+        tracer = PtraceTracer(pid, options.unw)
 
     # inject enable
     if enable or interactive:
@@ -152,6 +185,6 @@ def main_func():
 
         print(f"mt file is {mt_fname}")
 
-        report(mt_fname, tree, all)
+        report(mt_fname, tree, all, options.symbolizer)
 
 main_func()

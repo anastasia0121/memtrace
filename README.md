@@ -10,7 +10,12 @@ i.e. with -fno-omit-frame-pointer or in debug mode (as frame pointers omits by d
 # Build c++ library
 ```cmake -B build && cmake --build build```
 
-If you want to build the memtrace tests, you have to pass `-DENABLE_TESTS=ON` when configuring your project with CMake.
+## Tests
+The tests are neither built nor run by default. They need an installed googletest:
+```
+cmake -B build -DENABLE_TESTS=ON
+cmake --build build --target memtrace_check
+```
 
 # How to use
 1. make you application with -fno-omit-frame-pointer
@@ -19,15 +24,31 @@ If you want to build the memtrace tests, you have to pass `-DENABLE_TESTS=ON` wh
 3. launch memtrace client with required options.
 ```
 $ python3 -m memtrace --help
-usage: memtrace [-h] [-p PID] [-f FILE] [-g] [-e] [-d] [-s] [-t]
+usage: memtrace [-h] [-p PID] [-a | --all | --no-all] [-f FILE] [-b]
+                [-g | --gdb | --no-gdb]
+                [-u | --libunwind | --no-libunwind] [-s SYMBOLIZER] [-e] [-d]
+                [-t]
 
 memtrace is a tool to trace allocations in c++ applications.
 
 options:
   -h, --help            show this help message and exit
   -p PID, --pid PID     process identifier
+  -a, --all, --no-all   Show all allocations without free
   -f FILE, --file FILE  existing mt file
-  -g, --gdb             use gdb instead of manual ptrace calls
+  -b, --binaries        print paths of all binaries from the mt file (-f is
+                        required) and exit, use it to check that all of them
+                        exist on the host where the file is parsed
+  -g, --gdb, --no-gdb   use gdb to attach to the process (default). --no-gdb
+                        attaches with ptrace, no heavy gdb process is needed.
+                        It is VERY experimental: the process can hang
+  -u, --libunwind, --no-libunwind
+                        Collect stacks with libunwind (default). --no-
+                        libunwind uses frame pointers, it is faster, but the
+                        application has to be built with -fno-omit-frame-
+                        pointer
+  -s SYMBOLIZER, --symbolizer SYMBOLIZER
+                        path to llvm symbolizer
 
 Actions:
   Tracing use interactiv mode by default. If only enable/disable/status are
@@ -39,7 +60,17 @@ Actions:
 Output:
   Output options.
 
-  -t, --tree            out as tree
+  -t, --tree            out as tree, required rich
+```
+
+The client can also be started directly, without `python3 -m`:
+`bin/memtrace -f file.mt`.
+
+## Parse an mt file on another host
+To check that all binaries of the traced application are available on the host
+where the mt file is parsed, print their paths (allocation data is not parsed):
+```
+$ memtrace -f file.mt -b | xargs ls -1 > /dev/null
 ```
 
 # Results

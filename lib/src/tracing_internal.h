@@ -167,8 +167,17 @@ struct stack
     stack(const stack_view &view)
         : m_length(view.m_length)
     {
+        // an empty view has no stack pointer, memcpy(nullptr, ...) is undefined
+        if (0 == m_length) {
+            return;
+        }
+
         uint64_t size = m_length * sizeof(uint64_t);
         m_stack = (uintptr_t *)std::malloc(size);
+        if (!m_stack) {
+            m_length = 0;
+            return;
+        }
         memcpy(m_stack, view.m_stack, size);
     }
 
@@ -312,12 +321,34 @@ public:
 
     static const char *set_tracing_file(const char *file_name);
 
-    static void disbale() { s_use_memory_tracing = false; }
+    // Stop tracing without a dump, the data is kept: it can be dumped later.
+    static void disable_tracing() { s_use_memory_tracing = false; }
+
+    static bool is_tracing_enabled() { return s_use_memory_tracing; }
+
+    /**
+     * There is something to dump: the tracing is enabled, or it was stopped
+     * and the collected data has not been saved yet.
+     * A successful dump with disable clears the data, so it ends the session.
+     */
+    static bool has_data_to_dump();
 
 public:
-    static __attribute__((always_inline)) inline void alloc_ptr(void *old_ptr, size_t size, void *new_ptr);
+    static __attribute__((always_inline)) inline void alloc_ptr(size_t size, void *new_ptr);
 
     static __attribute__((always_inline)) inline void free_ptr(void *ptr);
+
+    /**
+     * Account a realloc, call it after the real realloc.
+     * The old block is already released here, so its usable size
+     * has to be taken before the real realloc.
+     *
+     * @param old_ptr old pointer, can be null
+     * @param old_usable_size malloc_usable_size(old_ptr) before realloc
+     * @param size requested size
+     * @param new_ptr the real realloc result
+     */
+    static void realloc_ptr(void *old_ptr, size_t old_usable_size, size_t size, void *new_ptr);
 
 private:
     static __attribute__((always_inline)) inline bool init_stack_bound();
@@ -330,7 +361,10 @@ private:
 
     uint64_t get_slice(stack_view sv);
 
-    void free_ptr_i(void *ptr);
+    // The usable size is required for a pointer that was allocated before tracing.
+    // By default it is taken from the block, so the block has to be alive.
+    static constexpr size_t s_no_usable_size = static_cast<size_t>(-1);
+    void free_ptr_i(void *ptr, size_t usable_size = s_no_usable_size);
 
     void alloc_ptr_i(void *ptr, stack_view &sv, size_t size);
 
@@ -454,28 +488,32 @@ stack_view storage::get_stack(uintptr_t *stack_ptr)
     frame_info *current = static_cast<frame_info *>(top_frame);
 
     for (uint64_t i = 0; i < s_max_stack_length; ++i) {
-        if (UNLIKELY((current < top_stack) || (current >= t_stack_end))) {
+        // the whole frame (next + return address) has to be inside the stack
+        if (UNLIKELY((current < top_stack) ||
+                     (reinterpret_cast<uintptr_t>(current) & (sizeof(void *) - 1)) ||
+                     (reinterpret_cast<uintptr_t>(current) + sizeof(frame_info) > reinterpret_cast<uintptr_t>(t_stack_end)))) {
             return stack_view(stack_ptr, i);
         }
         stack_ptr[i] = reinterpret_cast<uintptr_t>(current->ret_addr);
+
+        // the stack grows down, so a caller frame is always above the callee one,
+        // otherwise the frame pointer is not a frame pointer (or the chain is broken)
+        if (UNLIKELY(current->next <= current)) {
+            return stack_view(stack_ptr, i + 1);
+        }
         current = current->next;
     }
     return stack_view(stack_ptr, s_max_stack_length);
 }
 
-void storage::alloc_ptr(void *old_ptr, size_t size, void *new_ptr)
+void storage::alloc_ptr(size_t size, void *new_ptr)
 {
     // usual tracing is disable
     if (LIKELY(!s_use_memory_tracing || !s_storage)) {
         return;
     }
 
-    // realloc
-    if (old_ptr) {
-        s_storage->free_ptr_i(old_ptr);
-    }
-
-    // malloc, realloc
+    // malloc
     if (LIKELY(new_ptr)) {
         uintptr_t stack[s_max_stack_length];
         stack_view sv = s_unw ? get_stack_unw(stack) : get_stack(stack);

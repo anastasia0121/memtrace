@@ -14,9 +14,18 @@
 #include <syslog.h>
 #include <unistd.h>
 
+// It is provided by glibc and by jemalloc. The declaration is here
+// because <malloc.h> is a glibc header and the application can use jemalloc.
+extern "C" size_t malloc_usable_size(void *ptr) noexcept;
+
 /**
+   TODO: the following functions are not intercepted:
    size_t xallocx(void *ptr, size_t size, size_t extra, int flags);
    void sdallocx(void *ptr, size_t size, int flags);
+   size_t sallocx(const void *ptr, int flags);
+   size_t nallocx(size_t size, int flags);
+   void cfree(void *ptr);
+   void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
    int mallctl(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
    int mallctlnametomib(const char *name, size_t *mibp, size_t *miblenp);
    int mallctlbymib(const size_t *mib, size_t miblen, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
@@ -210,6 +219,46 @@ static __attribute__((always_inline)) inline bool initialize()
     return true;
 }
 
+/**
+ * Argument of the guard for the realloc family.
+ * The guard skips small pointers, and null is one of them: it is free(nullptr)
+ * that the dynamic loader calls from __tls_get_addr, see t_trace_guard.
+ * But realloc(nullptr, size) is malloc(size), it has to be traced
+ * in the same way as malloc, which never skips the guard.
+ */
+static inline std::optional<void *> realloc_guard_arg(void *ptr)
+{
+    if (!ptr) {
+        return std::nullopt;
+    }
+    return ptr;
+}
+
+/**
+ * number * size for calloc and reallocarray.
+ * On overflow the real function fails and returns null, nothing is accounted for a null pointer,
+ * so the result is just a size that can not be mistaken for a wrapped small one (or for 0).
+ */
+static inline size_t multiply_size(size_t number, size_t size)
+{
+    size_t total = 0;
+    if (__builtin_mul_overflow(number, size, &total)) {
+        return static_cast<size_t>(-1);
+    }
+    return total;
+}
+
+/**
+ * Usable size of the block that realloc is going to release.
+ */
+static inline size_t old_block_usable_size(const memtrace::t_trace_guard &guard, void *ptr)
+{
+    if (ptr && guard.need_to_trace() && memtrace::storage::is_tracing_enabled()) {
+        return malloc_usable_size(ptr);
+    }
+    return 0;
+}
+
 extern "C" {
 
 void *malloc(size_t size)
@@ -219,7 +268,7 @@ void *malloc(size_t size)
     if (LIKELY(initialize())) {
         void *ptr = s_malloc_p(size);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -233,7 +282,7 @@ void *calloc(size_t number, size_t size)
     if (LIKELY(initialize())) {
         void *ptr = s_calloc_p(number, size);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, number * size, ptr);
+            memtrace::storage::alloc_ptr(multiply_size(number, size), ptr);
         }
         return ptr;
     }
@@ -247,7 +296,7 @@ void *mallocx(size_t size, int flags)
     if (LIKELY(initialize())) {
         void *ptr = s_mallocx_p(size, flags);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -261,7 +310,7 @@ void *memalign(size_t align, size_t size)
     if (LIKELY(initialize())) {
         void *ptr = s_memalign_p(align, size);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -294,12 +343,14 @@ void dallocx(void *ptr, int flags)
 
 void *realloc(void *ptr, size_t size)
 {
-    memtrace::t_trace_guard guard(ptr);
+    memtrace::t_trace_guard guard(realloc_guard_arg(ptr));
 
     if (LIKELY(initialize())) {
+        // realloc releases the old block, so its size has to be taken before
+        size_t old_usable_size = old_block_usable_size(guard, ptr);
         void *new_ptr = s_realloc_p(ptr, size);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(ptr, size, new_ptr);
+            memtrace::storage::realloc_ptr(ptr, old_usable_size, size, new_ptr);
         }
         return new_ptr;
     }
@@ -308,12 +359,13 @@ void *realloc(void *ptr, size_t size)
 
 void *rallocx(void *ptr, size_t size, int flags)
 {
-    memtrace::t_trace_guard guard(ptr);
+    memtrace::t_trace_guard guard(realloc_guard_arg(ptr));
 
     if (LIKELY(initialize())) {
+        size_t old_usable_size = old_block_usable_size(guard, ptr);
         void *new_ptr = s_rallocx_p(ptr, size, flags);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(ptr, size, new_ptr);
+            memtrace::storage::realloc_ptr(ptr, old_usable_size, size, new_ptr);
         }
         return new_ptr;
     }
@@ -327,7 +379,7 @@ void *aligned_alloc(size_t alignment, size_t size)
     if (LIKELY(initialize())) {
         void *ptr = s_aligned_alloc_p(alignment, size);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -341,7 +393,7 @@ int posix_memalign(void **memptr, size_t alignment, size_t size)
         int ret = s_posix_memalign_p(memptr, alignment, size);
         if (ret == 0) {
             if (guard.need_to_trace()) {
-                memtrace::storage::alloc_ptr(nullptr, size, *memptr);
+                memtrace::storage::alloc_ptr(size, *memptr);
             }
         }
         return ret;
@@ -356,7 +408,7 @@ void *valloc(size_t size)
     if (LIKELY(initialize())) {
         void *ptr = s_valloc_p(size);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -370,7 +422,7 @@ void *pvalloc(size_t size)
     if (LIKELY(initialize())) {
         void *ptr = s_pvalloc_p(size);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -379,12 +431,15 @@ void *pvalloc(size_t size)
 
 void *reallocarray(void *ptr, size_t nmemb, size_t size)
 {
-    memtrace::t_trace_guard guard(ptr);
+    memtrace::t_trace_guard guard(realloc_guard_arg(ptr));
 
     if (LIKELY(initialize())) {
+        // On overflow reallocarray fails. A wrapped size could look like 0 (free) below.
+        const size_t total = multiply_size(nmemb, size);
+        size_t old_usable_size = old_block_usable_size(guard, ptr);
         void *new_ptr = s_reallocarray_p(ptr, nmemb, size);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(ptr, nmemb * size, new_ptr);
+            memtrace::storage::realloc_ptr(ptr, old_usable_size, total, new_ptr);
         }
         return new_ptr;
     }
@@ -420,7 +475,7 @@ void *operator new(std::size_t size)
     if (LIKELY(initialize())) {
         void *ptr = s_new_operator_p(size);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -434,7 +489,7 @@ void *operator new[](std::size_t size)
     if (LIKELY(initialize())) {
         void *ptr = s_new_array_operator_p(size);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -448,7 +503,7 @@ void *operator new(std::size_t size, const std::nothrow_t &nothrow) noexcept
     if (LIKELY(initialize())) {
         void *ptr = s_new_nothrow_operator_p(size, nothrow);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -462,7 +517,7 @@ void *operator new[](std::size_t size, const std::nothrow_t &nothrow) noexcept
     if (LIKELY(initialize())) {
         void *ptr = s_new_array_nothrow_operator_p(size, nothrow);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -553,7 +608,7 @@ void *operator new(std::size_t size, std::align_val_t align)
     if (LIKELY(initialize())) {
         void *ptr = s_new_aligned_operator_p(size, align);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -567,7 +622,7 @@ void *operator new(std::size_t size, std::align_val_t align, const std::nothrow_
     if (LIKELY(initialize())) {
         void *ptr = s_new_aligned_nothrow_operator_p(size, align, nothrow);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -581,7 +636,7 @@ void *operator new[](std::size_t size, std::align_val_t align)
     if (LIKELY(initialize())) {
         void *ptr = s_new_array_aligned_operator_p(size, align);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }
@@ -595,7 +650,7 @@ void *operator new[](std::size_t size, std::align_val_t align, const std::nothro
     if (LIKELY(initialize())) {
         void *ptr = s_new_array_aligned_nothrow_operator_p(size, align, nothrow);
         if (guard.need_to_trace()) {
-            memtrace::storage::alloc_ptr(nullptr, size, ptr);
+            memtrace::storage::alloc_ptr(size, ptr);
         }
         return ptr;
     }

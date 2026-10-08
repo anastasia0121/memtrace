@@ -155,7 +155,23 @@ void storage::alloc_ptr_i(void *ptr, stack_view &sv, size_t size)
     m_pointers[ptr_map_number][ptr] = {size, info};
 }
 
-void storage::free_ptr_i(void *ptr)
+void storage::realloc_ptr(void *old_ptr, size_t old_usable_size, size_t size, void *new_ptr)
+{
+    if (LIKELY(!s_use_memory_tracing || !s_storage)) {
+        return;
+    }
+
+    // If realloc fails, the old block is still alive and nothing has changed.
+    // realloc(ptr, 0) frees the block and returns null.
+    const bool old_released = new_ptr || 0 == size;
+    if (old_ptr && old_released) {
+        s_storage->free_ptr_i(old_ptr, old_usable_size);
+    }
+
+    alloc_ptr(size, new_ptr);
+}
+
+void storage::free_ptr_i(void *ptr, size_t usable_size)
 {
     pointer_info ptr_info;
 
@@ -180,7 +196,8 @@ void storage::free_ptr_i(void *ptr)
     }
 
     // if the allocation happens before tracing start
-    std::uint64_t size = malloc_usable_size(ptr);
+    // TODO:
+    std::uint64_t size = (s_no_usable_size == usable_size) ? malloc_usable_size(ptr) : usable_size;
     m_statistics.add_free_no_alloc(size);
 
     uintptr_t stack[s_max_stack_length];
@@ -244,6 +261,15 @@ void storage::clear()
             delete info;
         }
         m_storage[i].clear();
+    }
+
+    // frees of the pointers allocated before tracing must not go to the next session
+    for (size_t i = 0; i < m_free_storage.size(); ++i) {
+        std::unique_lock<std::shared_mutex> guard(m_free_mutexes[i]);
+        for (const auto &[view, info] : m_free_storage[i]) {
+            delete info;
+        }
+        m_free_storage[i].clear();
     }
 
     m_statistics.clear();
@@ -341,10 +367,28 @@ static storage *get_storage()
     return &instance;
 }
 
+bool storage::has_data_to_dump()
+{
+    if (s_use_memory_tracing) {
+        return true;
+    }
+
+    // stopped: there is a session only if something was collected and not saved
+    return s_storage &&
+           (0 != s_storage->m_statistics.get_all_allocations() ||
+            0 != s_storage->m_statistics.get_free_no_alloc());
+}
+
 const char *storage::enable_tracing(bool usable_size, bool unw)
 {
     if (UNLIKELY(s_use_memory_tracing)) {
         return "Tracing has already enabled";
+    }
+
+    // A new session starts clean: the data of the previous one can stay
+    // if it was not saved (the file was not created).
+    if (s_storage) {
+        s_storage->clear();
     }
 
     s_use_memory_tracing = true;
@@ -419,10 +463,12 @@ static int dump_bin_info(struct dl_phdr_info *info, size_t size, void *data)
         }
         // Our bin file
         dd->is_first = false;
-        path_len = readlink("/proc/self/exe", resolved_path, PATH_MAX - 1);
-        if (path_len <= 0) {
+        // readlink returns -1 on error, it must not be converted to size_t before the check
+        ssize_t link_len = readlink("/proc/self/exe", resolved_path, PATH_MAX - 1);
+        if (link_len <= 0) {
             return 0;
         }
+        path_len = static_cast<size_t>(link_len);
         resolved_path[path_len] = '\0';
     }
     else if (realpath(info->dlpi_name, resolved_path)) {
@@ -439,27 +485,45 @@ static int dump_bin_info(struct dl_phdr_info *info, size_t size, void *data)
 
 const char *storage::dump_tracing(bool disable)
 {
-    if (!s_use_memory_tracing) {
-        return "tracing is not enabled";
+    // there was no tracing, or the data has been saved by the previous disable
+    if (!has_data_to_dump()) {
+        return "There is nothing to dump";
     }
 
+    // The tracing is stopped anyway, even if the file cannot be created.
+    // The collected data is kept until the next enable, so the dump can be repeated
+    // after the tracing is stopped.
     if (disable) {
         s_use_memory_tracing = false;
     }
 
-    t_trace_guard gurd;
+    t_trace_guard guard;
     if (!s_storage) {
         return "storage is not initialized";
     }
 
-    std::string trace_file(s_storage->m_shared_data.data);
-    std::ofstream file(trace_file, std::ios::out | std::ios::binary);
-    if (!file.is_open()) {
-        return "Cannot create tracing file";
+    const char *error = nullptr;
+    std::ofstream file;
+
+    const char *data = s_storage->m_shared_data.data;
+    std::string trace_file(data, strnlen(data, s_shared_size));
+    if (trace_file.empty()) {
+        error = "Tracing file is not set";
+    }
+    else {
+        file.open(trace_file, std::ios::out | std::ios::binary);
+        if (!file.is_open()) {
+            error = "Cannot create tracing file";
+        }
+    }
+
+    if (error) {
+        return error;
     }
 
     s_storage->dump(file);
     if (disable) {
+        // the data is saved and dropped, there is nothing to dump any more
         s_storage->clear();
     }
 
@@ -471,7 +535,8 @@ const char *storage::dump_tracing(bool disable)
 
 void *storage::get_shared_data()
 {
-    if (s_use_memory_tracing && s_storage) {
+    // available after the tracing is stopped too: the data can be dumped later
+    if (has_data_to_dump() && s_storage) {
         SharedData *sd = &(s_storage->m_shared_data);
         sd->now_in_memory = s_storage->m_statistics.get_now_in_memory();
         sd->all_allocations = s_storage->m_statistics.get_all_allocations();
@@ -483,8 +548,8 @@ void *storage::get_shared_data()
 
 const char *storage::set_tracing_file(const char *file_name)
 {
-    if (!s_use_memory_tracing || !s_storage) {
-        return "tracing is not enabled";
+    if (!has_data_to_dump() || !s_storage) {
+        return "There is nothing to dump";
     }
 
     std::string fname(file_name);
@@ -507,9 +572,9 @@ const void *enable_memory_tracing(bool usable_size, bool unw)
     return memtrace::storage::enable_tracing(usable_size, unw);
 }
 
-const void disable_memory_tracing_not_dump()
+void disable_memory_tracing_not_dump()
 {
-    memtrace::storage::disbale();
+    memtrace::storage::disable_tracing();
 }
 
 const void *disable_memory_tracing()
